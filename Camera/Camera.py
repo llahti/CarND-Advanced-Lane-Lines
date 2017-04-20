@@ -1,28 +1,32 @@
 # Camera calibration
-
-
 import numpy as np
 import cv2
 import glob
 import tqdm
-from moviepy.editor import VideoFileClip
 
 
 class Camera:
-    """Hardware abstraction for camera"""
+    """Hardware abstraction for camera. Currently this is "semi-abstract" base class 
+    and it handles only camera calibration related stuff. """
 
-    def __init__(self, name=None):
+    def __init__(self, name=None, undistort=True):
         """
         Opens camera session.
         
-        :param name: If not given open first camera which is available,  
+        :param name: If not given open first camera which is available,
+        :param undistort: If True then images will be undistorted as default.
         """
 
         # Initialize camera calibration parameters
         self.mtx, self.dist, self.rvecs, self.tvecs = None, None, None, None
 
-        if name:
-            clip1 = VideoFileClip("project_video.mp4")
+    def __iter__(self):
+        assert True, "Abstract base class does not implement this method."
+        return self
+
+    def __next__(self):
+        assert True, "Abstract base class does not implement this method."
+        return None
 
     def calibrate(self, pattern, nxy=(9, 6), verbose=0):
         """
@@ -55,8 +59,12 @@ class Camera:
         objpoints = [] # 3d point in real world space
         imgpoints = [] # 2d points in image plane.
 
-        images = glob.glob('./camera_cal/*.jpg')
+        images = glob.glob(pattern)
+        if len(images) == 0:
+            raise FileNotFoundError("No image files found from given location.")
         counter = 0
+
+        gray = None
 
         if verbose == 1:
             it = tqdm.tqdm(images, desc="Finding corners")
@@ -64,7 +72,7 @@ class Camera:
             it = images
         for fname in it:
             img = cv2.imread(fname)
-            gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
             # Find the chess board corners
             ret, corners = cv2.findChessboardCorners(gray, (nx, ny))
@@ -92,10 +100,11 @@ class Camera:
         ret, self.mtx, self.dist, self.rvecs, self.tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
         return ret
 
+    def undistort(self, image):
+        return cv2.undistort(image, self.mtx, self.dist, None, None)
 
     def save_params(self, filename):
         np.savez(filename, self.mtx, self.dist, self.rvecs, self.tvecs)
-
 
     def load_params(self, filename):
         npzfile = np.load(filename)
@@ -104,8 +113,8 @@ class Camera:
         self.rvecs = npzfile[2]
         self.tvecs = npzfile[3]
 
-        return mtx, dist, rvecs, tvecs
-
 
 if __name__ == '__main__':
-    ret, mtx, dist, rvecs, tvecs = calibrate('./camera_cal/*.jpg', (9, 6), show=True)
+    cam = Camera()
+
+    ret = cam.calibrate('./camera_cal/*.jpg', (9, 6), verbose=1)

@@ -31,7 +31,9 @@ The goals / steps of this project are the following:
 [image13]: ./illustrations/calib_original_and_undistorted.jpg "Original and Undistorted Images"
 [//]: # (Image References - Colot channels)
 [image14]: ./illustrations/color_hls_rgb_channles_splitted.jpg "HLS and RGB color channels splitted."
-
+[image15]: ./illustrations/color_thresholded.jpg "Most prominent color channels thresholded"
+[//]: # (Image References - Gradient Thresholding)
+[image16]: ./illustrations/grad_direction_thresholding_sectors.jpg "Direction thresholding on sector star."
 [//]: # (Article References)
 [1]: http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#drawchessboardcorners
 
@@ -219,6 +221,40 @@ their color planes. In below image color space is splitted into [HSL](https://en
 and [RGB](https://en.wikipedia.org/wiki/RGB_color_space) channels.
 
 ![alt text][image14]
+
+Then i tried different thresholding methods to map features (yellow and white 
+lines) into binary image which only have 2 values, zero and one.
+I ended up to threshold Hue, Saturation and Lightness channel separately and 
+results are shown below.
+
+![alt text][image15]
+
+Then combine these thresholded images into one binary image which contains 
+information of yellow and white lanes.
+
+
+### Gradient Thresholding
+
+In order to be more confident about the lane line locations I'm also using 
+gradient thresholding. Specifically gradient direction thresholding together 
+with gradient magnitude thresholding. 
+
+In simplicity we are finding strong edges of lines which are pointing to defined 
+direction.
+
+Good way to illustrate gradient direction thresholding is with sector start 
+target. In below example image is thresholded so that only lines which direction 
+is similar to lane lines are visible.
+ 
+![alt text][image16]
+
+
+
+
+
+
+
+
 
 
 ### Pipeline (single images)

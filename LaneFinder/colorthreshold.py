@@ -1,7 +1,9 @@
+import numpy as np
+import cv2
+
 def color_threshold(image):
     # Test out HSL thresholding
-    import numpy as np
-    import cv2
+
 
     img = image
 
@@ -43,3 +45,5 @@ def color_threshold(image):
     binary_both[(binary_yellow==1)|(binary_white==1)]=1
 
     return binary_both
+
+

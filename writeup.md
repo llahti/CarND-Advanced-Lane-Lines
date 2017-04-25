@@ -36,7 +36,9 @@ The goals / steps of this project are the following:
 [image16]: ./illustrations/grad_direction_thresholding_sectors.jpg "Direction thresholding on sector star."
 [//]: # (Image References - Perspective Transform)
 [image17]: ./illustrations/warped.jpg "Perspective transform."
-
+[//]: # (Image References - Sliding window)
+[image18]: ./illustrations/binary_warped_image.jpg "Binary Warped Image and Histogram."
+[image19]: ./illustrations/sliding_windows.jpg "Sliding Windows."
 [//]: # (Article References)
 [1]: http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#drawchessboardcorners
 
@@ -276,6 +278,15 @@ transformation so that lane lines are parallel. We also don't know whether car i
 centered on lane so let's just assume that it's not and rely on our camera 
 centric view.
 
+### Sliding Window Search
+
+After we have nicely warped binary image and all the lane pixels found i begin 
+to locate lane lines. 
+
+![alt text][image18]
+
+
+![alt text][image19]
 
 ### Pipeline (single images)
 

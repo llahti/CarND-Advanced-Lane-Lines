@@ -1,13 +1,12 @@
-from threshold import Color, GradientMagDir
-from transformations import Perspective
+from .threshold import Color, GradientMagDir
+from .transformations import Perspective
 import numpy as np
 import cv2
 
-class Pipeline_UdacityProject:
+class Pipeline_LanePixels:
+    """This pipeline detects lane pixels and transform image to bird view."""
 
     def __init__(self):
-        # CLAHE
-        # self.clahe = cv2.createCLAHE(2., (64,64))
         # Color threshold
         ch_hue_yellow = Color(Color.CHANNEL_HUE, (33, 47))
         ch_sat_yellow_white = Color(Color.CHANNEL_SATURATION, (0.3, 2))
@@ -22,16 +21,16 @@ class Pipeline_UdacityProject:
         # Define Perspective transformation
         yt = 460  # Y-top
         yb = 670  # Y-bottom
-        src = np.array([[715, yt],  # Top-Right
+        src = np.array([[710, yt],  # Top-Right
                         [1080, yb],  # Bottom-Right
                         [200, yb],  # Bottom-Left
-                        [565, yt]],  # Top-Left
+                        [569, yt]],  # Top-Left
                        dtype=np.float32)
         image_size = (256, 512)
-        dst = np.array([[image_size[0] * 0.8, image_size[1] * 0.1],
-                        [image_size[0] * 0.8, image_size[1]],
-                        [image_size[0] * 0.2, image_size[1]],
-                        [image_size[0] * 0.2, image_size[1] * 0.1]],
+        dst = np.array([[image_size[0] * 0.8, image_size[1] * 0],  # * 0.1
+                        [image_size[0] * 0.8, image_size[1]],  # * 0.9
+                        [image_size[0] * 0.2, image_size[1]],  # * 0.9
+                        [image_size[0] * 0.2, image_size[1] * 0]],  # * 0.1
                        dtype=np.float32)
 
         self.ptrans = Perspective(src, dst, image_size)
@@ -44,9 +43,6 @@ class Pipeline_UdacityProject:
 
         # Warp perspective
         image_warped = self.ptrans.apply(image)
-        # Apply adaptive histogram equalization on L-channel
-        #image_clahe_lightness = self.clahe.apply(image_warped)
-        #image_warped = image_clahe_lightness
         # Convert image to float data format
         image_warped = Color.im2float(image_warped)
         # and HLS color space
@@ -54,13 +50,12 @@ class Pipeline_UdacityProject:
         prediction = np.zeros_like(image_warped[:,:,0])
         image_warped = GradientMagDir.gaussian_blur(image_warped, 5)
 
-
+        # Loop each
         for t in self.thresholds:
             temp_img = t.apply(image_warped)
             prediction += temp_img
-            #cv2.imshow('image', temp_img)
-            #cv2.waitKey(15000)
 
+        # Threshold resulting prediction of lane lines
         lane_lines = np.zeros_like(prediction)
         lane_lines[(prediction >= 2) ] = 1
 
@@ -78,7 +73,7 @@ if __name__ == "__main__":
         cv2.imshow('image', image)
         cv2.waitKey(15000)
 
-        p = Pipeline_UdacityProject()
+        p = Pipeline_LanePixels()
         image = p.apply(image)
         print(image.min(), image.max())
 
@@ -88,7 +83,7 @@ if __name__ == "__main__":
     if True:
         from moviepy.editor import VideoFileClip
         clip1 = VideoFileClip("../project_video.mp4")
-        p = Pipeline_UdacityProject()
+        p = Pipeline_LanePixels()
         print("Duration of clip: ", clip1.duration)
         print("FPS of clip:, ", clip1.fps)
         i_frame_ms = 1 / clip1.fps * 1000  # Interval between frames in milliseconds

@@ -34,6 +34,9 @@ The goals / steps of this project are the following:
 [image15]: ./illustrations/color_thresholded.jpg "Most prominent color channels thresholded"
 [//]: # (Image References - Gradient Thresholding)
 [image16]: ./illustrations/grad_direction_thresholding_sectors.jpg "Direction thresholding on sector star."
+[//]: # (Image References - Perspective Transform)
+[image17]: ./illustrations/warped.jpg "Perspective transform."
+
 [//]: # (Article References)
 [1]: http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#drawchessboardcorners
 
@@ -201,7 +204,7 @@ From below image you can see how undistort corrects distorted images.
 ![alt text][image13]
 
 
-### Color Thresholding and Gradients
+### Color Threshold and Gradients Threshold
 
 OK. Images are now undistorted and the next step in this project is to find out 
 how to find those lane lines. In my project I'm using methods which i describe in 
@@ -211,7 +214,7 @@ when you combine simple methods you are able to extract information more reliabl
 For human being lane line detection is trivial task. You just find lines which 
 divide lanes and are white or yellow in color. 
 
-#### Color Thresholding
+#### Color Threshold
 
 Purpose of color thresholding is to find areas from image by predefined color. 
 In my project I'm using this method to find yellow and white colors.
@@ -233,7 +236,7 @@ Then combine these thresholded images into one binary image which contains
 information of yellow and white lanes.
 
 
-### Gradient Thresholding
+### Gradient Threshold
 
 In order to be more confident about the lane line locations I'm also using 
 gradient thresholding. Specifically gradient direction thresholding together 
@@ -249,12 +252,29 @@ is similar to lane lines are visible.
 ![alt text][image16]
 
 
+### Perspective Transform
 
+Perspective transform is important tool in this project as it allows us to 
+transform image so that we can see road from birds perspective. This makes it 
+easy to fit curve on lane line and calculate curvature.
 
+I'm assuming in this perspective transformation that camera is located exactly 
+on horizontal center of the car and it is pointing exactly to same direction 
+than car.
+ 
+Below image illustrates how perspective is transformed. Images also has source 
+and destination points marked. I also compared linear and cubic interpolation and 
+it seems that there aren't much difference so i'll stick to linear interpolation 
+in my code.
+ 
+![alt text][image17]
 
-
-
-
+You may have noticed that lane lines are not exactly centered on image. This 
+comes from our assumption that camera is centered and pointing exactly to same 
+direction than car. I used this particular image of straight lines to "calibrate" 
+transformation so that lane lines are parallel. We also don't know whether car is 
+centered on lane so let's just assume that it's not and rely on our camera 
+centric view.
 
 
 ### Pipeline (single images)

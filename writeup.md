@@ -39,6 +39,12 @@ The goals / steps of this project are the following:
 [//]: # (Image References - Sliding window)
 [image18]: ./illustrations/binary_warped_image.jpg "Binary Warped Image and Histogram."
 [image19]: ./illustrations/sliding_windows.jpg "Sliding Windows."
+[image20]: ./illustrations/sliding_window_lanes_fitted.jpg "Lanes fitted by sliding window search"
+[//]: # (Image References - Curve Search)
+[image21]: ./illustrations/curve_lanes_fitted.jpg "Curve Search: Lanes Fitted."
+
+
+
 [//]: # (Article References)
 [1]: http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#drawchessboardcorners
 
@@ -281,12 +287,34 @@ centric view.
 ### Sliding Window Search
 
 After we have nicely warped binary image and all the lane pixels found i begin 
-to locate lane lines. 
+to locate lane lines. First step on finding a lane line is to locate it's base 
+which is nearest to the car. This is done by taking histogram of bottom half of 
+the image. In histogram we can see 2 distinct peaks which are the lane lines. 
 
 ![alt text][image18]
 
+Next step is to use sliding window search to locate rest of the lane lines. 
+Algorithm is locating lane pixels from each window and relocating next window 
+when window is off lane center given amount of pixels.
 
 ![alt text][image19]
+
+In below image you can see by red color how found lanes are fitted on warped 
+binary image.
+
+![alt text][image20]
+
+### Curve Search
+
+When we know initial lane curves we can begin to use more optimized searching 
+method. In this "curve" search we can search lane lines by using the curves 
+we already know.
+
+Such like in below image we know the curves and then we can find lane pixels in 
+vicinity of those curves. Green area is the search area.
+
+![alt text][image21]
+
 
 ### Pipeline (single images)
 

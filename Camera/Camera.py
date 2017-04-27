@@ -21,17 +21,19 @@ class Camera:
         self.mtx, self.dist, self.rvecs, self.tvecs = None, None, None, None
 
     def __iter__(self):
-        assert True, "Abstract base class does not implement this method."
+        assert True, "Base class does not implement this method."
         return self
 
     def __next__(self):
-        assert True, "Abstract base class does not implement this method."
+        assert True, "Base class does not implement this method."
         return None
 
-    def calibrate(self, pattern, nxy=(9, 6), verbose=0):
+    def calibrate_folder(self, pattern='./camera_cal/*.jpg', nxy=(9, 6), verbose=0):
         """
         This functions reads all calibration grid images according to specified 
         pattern and returns calibration coefficients.
+        
+        For example pattern can instruct to read all the jpg images from folder. 
         
         This function is based on code and information gathered from following sources.
         - http://docs.opencv.org/3.1.0/dc/dbb/tutorial_py_calibration.html
@@ -101,20 +103,32 @@ class Camera:
         return ret
 
     def undistort(self, image):
+        """
+        Undistorts image.
+        
+        :param image: 
+        :return: Undistorted image 
+        """
         return cv2.undistort(image, self.mtx, self.dist, None, None)
 
     def save_params(self, filename):
-        np.savez(filename, self.mtx, self.dist, self.rvecs, self.tvecs)
+        """Save calibration parameters to file.
+        :param filename: Filename (use *.npy file extension).
+        """
+        np.save(filename, [self.mtx, self.dist, self.rvecs, self.tvecs])
 
     def load_params(self, filename):
-        npzfile = np.load(filename)
-        self.mtx = npzfile[0]
-        self.dist = npzfile[1]
-        self.rvecs = npzfile[2]
-        self.tvecs = npzfile[3]
+        """Loads calibration parameters from file."""
+        np_array = np.load(filename)
+        self.mtx = np_array[0]
+        self.dist = np_array[1]
+        self.rvecs = np_array[2]
+        self.tvecs = np_array[3]
 
 
 if __name__ == '__main__':
     cam = Camera()
 
-    ret = cam.calibrate('./camera_cal/*.jpg', (9, 6), verbose=1)
+    ret = cam.calibrate_folder('./camera_cal/*.jpg', (9, 6), verbose=1)
+    cam.save_params('../udacity_project_calibration.npy')
+    cam.load_params('../udacity_project_calibration.npy')

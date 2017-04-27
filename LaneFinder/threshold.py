@@ -74,6 +74,15 @@ class Color:
         return dst
 
     @staticmethod
+    def float2uint8(image):
+        """Converts floating point image to uint8.
+        input image value range is 0..1."""
+        dst = image.copy()
+        dst *= 255
+        dst = dst.astype('uint8')
+        return dst
+
+    @staticmethod
     def rgb2hls(image):
         """Note: after conversion H-channel values are 0...360. """
         return cv2.cvtColor(image, cv2.COLOR_RGB2HLS)

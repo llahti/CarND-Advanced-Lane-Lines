@@ -1,9 +1,10 @@
-import Camera
+from Camera.CameraBase import CameraBase
 from moviepy.editor import VideoFileClip
 
-class CameraVideoClipMPY(Camera):
+
+class CameraBaseVideoClipMPY(CameraBase):
     def __init__(self, name=None, undistort=True):
-        super(CameraVideoClipMPY, self).__init__(name=name, undistort=undistort)
+        super(CameraBaseVideoClipMPY, self).__init__(name=name, undistort=undistort)
 
         if name:
             self.clip = VideoFileClip(name)

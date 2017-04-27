@@ -5,7 +5,7 @@ import glob
 import tqdm
 
 
-class Camera:
+class CameraBase:
     """Hardware abstraction for camera. Currently this is "semi-abstract" base class 
     and it handles only camera calibration related stuff. """
 
@@ -16,7 +16,6 @@ class Camera:
         :param name: If not given open first camera which is available,
         :param undistort: If True then images will be undistorted as default.
         """
-
         # Initialize camera calibration parameters
         self.mtx, self.dist, self.rvecs, self.tvecs = None, None, None, None
 
@@ -127,7 +126,7 @@ class Camera:
 
 
 if __name__ == '__main__':
-    cam = Camera()
+    cam = CameraBase()
 
     ret = cam.calibrate_folder('./camera_cal/*.jpg', (9, 6), verbose=1)
     cam.save_params('../udacity_project_calibration.npy')

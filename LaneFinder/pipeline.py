@@ -5,16 +5,21 @@ import numpy as np
 import cv2
 
 class Pipeline_LanePixels:
-    """This pipeline detects lane pixels and transform image to bird view."""
-
+    """This pipeline detects lane pixels, transform image to bird view and 
+    calculates lane curvature and offset"""
     def __init__(self):
 
+        # Define image sizes
+        self.input_image_size = (1280, 720)
+        #self.warped_image_size = (256, 512)
+        self.warped_image_size = (512, 1024)
         # Initialize thresholds
         self.__init_threshold()
         # Initialize perspective transform
         self._init_perspective_transform()
         # Initialize sliding window search
-        self.sw = SlidingWindow(nwindows=9, margin=30, minpix=5)
+        self.sw = SlidingWindow(nwindows=9, margin=30, minpix=5,
+                                image_size=self.warped_image_size)
         # Curve search is still empty as we don't know the initial curve locations
         self.curve = None
 
@@ -23,10 +28,6 @@ class Pipeline_LanePixels:
         Initialize perspective transform.
         :return: 
         """
-        # Define image sizes
-        self.input_image_size = (1280, 720)
-        self.warped_image_size = (256, 512)
-
         # Define Perspective transformation
         yt = 460  # Y-top
         yb = 670  # Y-bottom
@@ -61,6 +62,8 @@ class Pipeline_LanePixels:
                            ch_red_white ,gmd_lightness, gmd_saturation]
 
     def measure_curvature(self, left_fit, right_fit):
+        """Measure curve radius. This method scales measurement to real world 
+        units [m], by using static calibration ym_per_pix and xm_per_pix."""
         # Scaling of fitted curve
         # https://discussions.udacity.com/t/pixel-space-to-meter-space-conversion/241646/7
 
@@ -68,35 +71,13 @@ class Pipeline_LanePixels:
         ym_per_pix = 3 / 80  # meters per pixel in y dimension
         xm_per_pix = 3.7 / 130  # meters per pixel in x dimension
 
-        #ym_per_pix = 3 / 130  # meters per pixel in y dimension
-        #xm_per_pix = 3.7 / 80  # meters per pixel in x dimension
-
         image_size = self.warped_image_size
-        y_eval = np.max(image_size[1])
-        ploty = np.linspace(0, image_size[1] - 1,
-                            image_size[1])
+        y_eval = np.max(image_size[1]) / 2
+
         # normal polynomial: x=                 a * (y**2) +          b *y+c,
         # Scaled to meters: x= mx / (my ** 2) * a * (y**2) + (mx/my) * b *y+c
         a1 = (xm_per_pix / (ym_per_pix ** 2))
         b1 = (xm_per_pix / ym_per_pix)
-        #leftx  = a1 * left_fit[0]  * ploty ** 2 + b1 * left_fit[1]  * ploty + left_fit[2]
-        #rightx = a1 * right_fit[0] * ploty ** 2 + b1 * right_fit[1] * ploty + right_fit[2]
-        leftx  = left_fit[0]  * (ploty ** 2) + left_fit[1]  * ploty + left_fit[2]
-        rightx = right_fit[0] * (ploty ** 2) + right_fit[1] * ploty + right_fit[2]
-
-
-        left_fit_cr = np.polyfit(ploty * ym_per_pix, leftx * xm_per_pix, 2)
-        right_fit_cr = np.polyfit(ploty * ym_per_pix, rightx * xm_per_pix, 2)
-
-        #new_a =
-        #new_b
-
-        #left_curverad = ((1 + (
-        #2 * left_fit_cr[0] * y_eval * ym_per_pix + left_fit_cr[
-        #    1]) ** 2) ** 1.5) / np.absolute(2 * left_fit_cr[0])
-        #right_curverad = ((1 + (
-        #2 * right_fit_cr[0] * y_eval * ym_per_pix + right_fit_cr[
-        #    1]) ** 2) ** 1.5) / np.absolute(2 * right_fit_cr[0])
 
         left_curverad = ((1 + (
             2 * a1*left_fit[0] * y_eval * + b1 * left_fit[
@@ -105,20 +86,20 @@ class Pipeline_LanePixels:
             2 * a1*right_fit[0] * y_eval * + b1*right_fit[
                 1]) ** 2) ** 1.5) / np.absolute(2 * a1*right_fit[0])
 
-        # Example values: 632.1 m    626.2 m
+        # Calculate mean of left and right curvatures
         curve_rad = (left_curverad + right_curverad) / 2
-        #print(curve_rad)
         return curve_rad
 
     def measure_offset(self, left_fit, right_fit):
-        xm_per_pix = 3.7 / 130  # meters per pixel in x dimension
-        y_val = self.warped_image_size[1]
+        """Measure offset by using the 2nd order polynomial from lane detection."""
+        xm_per_pix = 3.7 / 260  # meters per pixel in x dimension
+        y_val = self.warped_image_size[1] / 2
         # Camera is not exactly on center of car so we need to compensate it with this number
         # It is calculated by measuring the center of lane from "straight_lines1.jpg"
-        x_correction = -67
+        x_correction = -134
         base_leftx  = left_fit[0]  * y_val ** 2 + left_fit[1]  * y_val + left_fit[2]
         base_rightx = right_fit[0] * y_val ** 2 + right_fit[1] * y_val + right_fit[2]
-        #print("bases", base_leftx, base_rightx)
+
         # Calculate image x-center (TODO: This calculation should be somewhere else. Not reasonable to calculate on every iteration.)
         center_of_image = self.warped_image_size[0] / 2.
         # Measured center and real offset calculations
@@ -171,7 +152,7 @@ class Pipeline_LanePixels:
         # Find lanes and fit curves
         if not self.curve:
             self.sw.find(thresholded)
-            self.curve= Curve(self.sw.left_fit, self.sw.right_fit)
+            self.curve= Curve(self.sw.left_fit, self.sw.right_fit, image_size=self.warped_image_size)
             lane = self.sw.visualize_lane()
             curve_rad = self.measure_curvature(self.sw.left_fit, self.sw.right_fit)
             offset = self.measure_offset(self.sw.left_fit, self.sw.right_fit)
@@ -184,20 +165,20 @@ class Pipeline_LanePixels:
         non_warped_lane = self.warp_inverse(lane)
 
         result = cv2.addWeighted(image, 1, non_warped_lane, 0.3, 0)
-        cv2.putText(result, "Curve rad: {:.3f}".format(curve_rad), (50,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255))
-        cv2.putText(result, "off center: {:.3f}".format(offset), (50, 100),
+        cv2.putText(result, "Curve Radius: {:.0f}m".format(curve_rad), (50,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255))
+        cv2.putText(result, "Off Center:   {:.2f}m".format(offset), (50, 100),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
 
         return result
 
 if __name__ == "__main__":
 
-    if False:
+    if True:
         #image = cv2.imread(
         #    './test_images/challenge_video.mp4_tarmac_edge_separates.jpg')
-        #image = cv2.imread(
-        #    './test_images/project_video.mp4_border_of_dark_and_bright_road.jpg')
-        image = cv2.imread("../test_images/straight_lines1.jpg")
+        image = cv2.imread(
+            './test_images/project_video.mp4_border_of_dark_and_bright_road.jpg')
+        #image = cv2.imread("../test_images/straight_lines1.jpg")
 
         cv2.imshow('image', image)
         cv2.waitKey(15000)
@@ -207,9 +188,10 @@ if __name__ == "__main__":
         print(image.min(), image.max())
 
         cv2.imshow('image', image)
+        cv2.imwrite('../visualized_lane.jpg', image)
         cv2.waitKey(15000)
 
-    if True:
+    if False:
         from moviepy.editor import VideoFileClip
         clip1 = VideoFileClip("../project_video.mp4")
         p = Pipeline_LanePixels()

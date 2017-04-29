@@ -42,7 +42,8 @@ The goals / steps of this project are the following:
 [image20]: ./illustrations/sliding_window_lanes_fitted.jpg "Lanes fitted by sliding window search"
 [//]: # (Image References - Curve Search)
 [image21]: ./illustrations/curve_lanes_fitted.jpg "Curve Search: Lanes Fitted."
-
+[//]: # (Image References - Augmented image)
+[image22]: ./illustrations/visualized_lane.jpg "Augmented lane on image"
 
 
 [//]: # (Article References)
@@ -202,6 +203,7 @@ So it would be good idea to be able to save and load camera calibration paramete
 
 This is done in save() and load() functions.
 
+
 #### Undistort
 
 Final step is to undistort image by using OpenCV's function [undistort](http://docs.opencv.org/2.4/modules/imgproc/doc/geometric_transformations.html?highlight=undistort#cv2.undistort) 
@@ -316,75 +318,107 @@ vicinity of those curves. Green area is the search area.
 ![alt text][image21]
 
 
+### Calculating Curvature & Offset
+
+Both of these calculations are done in LaneFinder.pipeline. Curvature is 
+calculated in method `measure_curvature(self, left_fit, right_fit)` which 
+input parameters are both lanes 2nd order polynomial. Output is mean of left 
+and right lane curvature in meters.
+ 
+Offset is calculated in method  `measure_offset(self, left_fit, right_fit)` which 
+also takes both lane's 2nd order polynomial as a parameter and returns the 
+distance from lane center.
+
+
 ### Pipeline (single images)
 
-####1. Provide an example of a distortion-corrected image.
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
-####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+Above I described single elements in my pipeline and here is short summary.
+Main portion of pipeline is located in `PipeLine_LanePixels.apply()`
 
-![alt text][image3]
+1. Undistort - Camera.undistort()
+2. Warp - Pipeline_LanePixels.warp()
+3. Convert uint8 to float32 image - Pipeline_LanePixels.apply()
+4. Convert BGR to HLS colorspace - Pipeline_LanePixels.apply()
+5. Threshold - Pipeline_LanePixels.threshold()
+5.1 Gaussian Blur
+5.2 Hue Threshold
+5.3 Lightness Threshold
+5.4 Saturation Threshold
+5.5 Red Threshold
+5.6 Gradient magnitude and dir on lightness channel
+5.7 Gradient magnitude and dir on saturation channel
+5.8 Sum thresholds and threshold once more
+6. Find lane pixels - LaneFinder/finder.py
+6.1 First shot with sliding window search
+6.2 Consequent frames with curve search
+7. Visualize lanes on warped empty image - LaneFinder/finder.py 
+8. Measure curvature and offset - Pipeline_LanePixels.measure_curvature and offset
+9. Unwarp visualized lane and combine with original image - Pipeline_LanePixels.apply()
+10. Add measurements to image - Pipeline_LanePixels.apply()
 
-####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+After applying pipeline to image we got following result.
+![alt text][image22]
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
+### Pipeline (video)
 
-```
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
+Here's a [link to my video result](./augmented_project_video.mp4)
 
-```
-This resulted in the following source and destination points:
+It is performing quite ok. 
+I would like to make few improvements such as.
+- improve robustness of the pipeline as currently there are no any methods 
+  recover from lost lines.
+- Weighted running average filter for lane detection to improve stability
+- Lane pixel detection needs also improvements to make it work on different roads.
 
-| Source        | Destination   | 
-|:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
 
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
-![alt text][image4]
+### Discussion
 
-####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+This project was interesting and i learned a lot about camera calibration and 
+perspective transformations.
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+There are still improvements needed. Particularly on lane detection and 
+how to make detection stable.
 
-![alt text][image5]
+Also performance needs improvements. I have been trying pipeline with with smaller 
+warped image size and it was much faster, but not as reliable.
 
-####5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
+## Output Images
 
-####6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
+Here is summarize all generated output images
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+### Finding corners from calibration grid
+[Calibration Grid Corners](./output_images/00.jpg)
 
-![alt text][image6]
+### Undistorted Image
 
----
+[Calibration Grid Corners](./output_images/01.jpg)
 
-###Pipeline (video)
+### Warped image
 
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
+[Unwarped and warped image with warping points](./output_images/02.jpg)
 
-Here's a [link to my video result](./project_video.mp4)
-
----
-
-###Discussion
-
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
-
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
-
+### Threshold Pipeline
+#### Hue Channel
+[Thresholded Hue](./output_images/threshold_0.jpg)
+#### Saturation Channel
+[Thresholded Saturation](./output_images/threshold_color_1.jpg)
+#### Lightness Channel
+[Thresholded Saturation](./output_images/threshold_color_2.jpg)
+#### Red Channel
+[Thresholded Red](./output_images/threshold_color_3.jpg)
+#### Summed Color Thresholds
+[Threshold Colors Summed](./output_images/threshold_color_summed.jpg)
+#### Final Threshold of Colors
+[Threshold Colors](./output_images/threshold_color.jpg)
+#### Gradient Magnitude and Direction on Lightness Channel
+[Gradient Magnitude and Direction on Lightness Channel](./output_images/threshold_gradient_0.jpg)
+#### Gradient Magnitude and Direction on Saturation Channel
+[Gradient Magnitude and Direction on Saturation Channel](./output_images/threshold_gradient_1.jpg)
+#### Summed Gradient Thresholds
+[Summed Gradient Thresholds](./output_images/threshold_gradient_summed.jpg)
+#### Final Threshold of Gradients
+[Threshold Gradients](./output_images/threshold_gradient.jpg)
+#### Final Binary Threshold
+[Final Threshold](./output_images/threshold_final.jpg)

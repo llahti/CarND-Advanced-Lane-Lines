@@ -12,7 +12,7 @@ class Pipeline_LanePixels:
         # Define image sizes
         self.input_image_size = (1280, 720)
         #self.warped_image_size = (256, 512)
-        self.warped_image_size = (512, 1024)
+        self.warped_image_size = (256, 512)
         # Initialize thresholds
         self.__init_threshold()
         # Initialize perspective transform
@@ -52,14 +52,20 @@ class Pipeline_LanePixels:
         """
         # Color threshold
         ch_hue_yellow = Color(Color.CHANNEL_HUE, (33, 47))
-        ch_sat_yellow_white = Color(Color.CHANNEL_SATURATION, (0.3, 2))
+        ch_sat_yellow_white = Color(Color.CHANNEL_SATURATION, (0.2, 2))
         ch_lightness_white = Color(Color.CHANNEL_LIGHTNESS, (0.8, 2))
         ch_red_white = Color(Color.CHANNEL_RED, (0.8, 2))
+        self.thresholds_color = [ch_hue_yellow, ch_lightness_white, ch_sat_yellow_white,
+                                ch_red_white]
+
         # Gradient threshold
-        gmd_lightness = GradientMagDir(Color.CHANNEL_LIGHTNESS, (0.9, 2), (0.4, 0.8))
-        gmd_saturation = GradientMagDir(Color.CHANNEL_SATURATION, (0.9, 2), (0.4, 0.8))
-        self.thresholds = [ch_hue_yellow, ch_lightness_white, ch_sat_yellow_white,
-                           ch_red_white ,gmd_lightness, gmd_saturation]
+        mu = np.pi / 2
+        dev = 0.3
+        gmd_lightness = GradientMagDir(Color.CHANNEL_LIGHTNESS, (0.1, 5),
+                                       limits_dir=(mu - dev, mu + dev))
+        gmd_saturation = GradientMagDir(Color.CHANNEL_SATURATION, (0.2, 5),
+                                        limits_dir=(mu - dev, mu + dev))
+        self.thresholds_gradient = [gmd_lightness, gmd_saturation]
 
     def measure_curvature(self, left_fit, right_fit):
         """Measure curve radius. This method scales measurement to real world 
@@ -92,7 +98,7 @@ class Pipeline_LanePixels:
 
     def measure_offset(self, left_fit, right_fit):
         """Measure offset by using the 2nd order polynomial from lane detection."""
-        xm_per_pix = 3.7 / 260  # meters per pixel in x dimension
+        xm_per_pix = 3.7 / 130  # meters per pixel in x dimension
         y_val = self.warped_image_size[1] / 2
         # Camera is not exactly on center of car so we need to compensate it with this number
         # It is calculated by measuring the center of lane from "straight_lines1.jpg"
@@ -108,33 +114,72 @@ class Pipeline_LanePixels:
         return measured_offset
 
     def warp(self, image):
-        """Wraps a perspective transformation."""
+        """Wrapper for perspective transformation."""
         return self.persp_trans.apply(image)
 
     def warp_inverse(self, image):
-        """Wraps a perspective transformation."""
+        """Wrapper for inverse perspective transformation."""
         return self.persp_trans.apply_inverse(image)
 
-    def threshold(self, image):
+    def threshold_color(self, image):
         """
-        
+        This method runs color threshold for given image.
         :param image: Float32 HLS image 
         :return: 
         """
         prediction = np.zeros_like(image[:, :, 0])
-        image_warped = GradientMagDir.gaussian_blur(image, 5)
+        image_warped = GradientMagDir.gaussian_blur(image, 3)
 
         # Loop each
-        for t in self.thresholds:
+        for i, t in enumerate(self.thresholds_color):
             temp_img = t.apply(image_warped)
             prediction += temp_img
+            #cv2.imwrite("../output_images/threshold_color_{}.jpg".format(i), temp_img*255)
 
+        #cv2.imwrite("../output_images/threshold_color_summed.jpg",
+        #            prediction * 255/temp_img.max())
         # Threshold resulting prediction of lane lines
         lane_lines = np.zeros_like(prediction)
         lane_lines[(prediction >= 2)] = 1
 
+        #cv2.imwrite("../output_images/threshold_color.jpg",
+        #            lane_lines * 255)
+
         # return image_warped
         return lane_lines
+
+    def threshold_gradient(self, image):
+        """
+        This method runs gradient threshold on given image.
+        :param image: Float32 HLS image 
+        :return: 
+        """
+        prediction = np.zeros_like(image[:, :, 0])
+        image_warped = GradientMagDir.gaussian_blur(image, 15)
+
+        # Loop each
+        for i, t in enumerate(self.thresholds_gradient):
+            temp_img = t.apply(image_warped)
+            prediction += temp_img
+            #cv2.imwrite("../output_images/threshold_gradient_{}.jpg".format(i),
+            #            temp_img * 255)
+
+        #cv2.imwrite("../output_images/threshold_gradient_summed.jpg",
+        #            prediction * 255 / temp_img.max())
+        # Threshold resulting prediction of lane lines
+        lane_lines = np.zeros_like(prediction)
+        lane_lines[(prediction >= 1)] = 1
+
+        # Close areas between line edges
+        kernel = np.ones((5, 5), np.uint8)
+        closing = cv2.morphologyEx(lane_lines, cv2.MORPH_CLOSE, kernel)
+
+        #cv2.imwrite("../output_images/threshold_gradient.jpg",
+        #            closing * 255)
+
+        # return image_warped
+        return closing
+
 
     def apply(self, image):
         """Applies pipeline to image.
@@ -146,18 +191,22 @@ class Pipeline_LanePixels:
         image_warped = Color.im2float(image_warped)
         # and HLS color space
         image_warped = Color.bgr2hls(image_warped)
-        # Threshold image to expose lane pixels
-        thresholded = self.threshold(image_warped)
+        # Threshold Color and Gradient
+        binary_color = self.threshold_color(image_warped)
+        binary_gradient = self.threshold_gradient(image_warped)
+        # Create binary which contains pixels with are hot in both pictures
+        binary = (binary_color >= 0.5) & (binary_gradient >= 0.5)
 
         # Find lanes and fit curves
         if not self.curve:
-            self.sw.find(thresholded)
-            self.curve= Curve(self.sw.left_fit, self.sw.right_fit, image_size=self.warped_image_size)
+            self.sw.find(binary)
+            self.curve= Curve(self.sw.left_fit, self.sw.right_fit,
+                              image_size=self.warped_image_size, margin=20)
             lane = self.sw.visualize_lane()
             curve_rad = self.measure_curvature(self.sw.left_fit, self.sw.right_fit)
             offset = self.measure_offset(self.sw.left_fit, self.sw.right_fit)
         else:
-            self.curve.find(thresholded)
+            self.curve.find(binary)
             lane = self.curve.visualize_lane()
             curve_rad = self.measure_curvature(self.curve.left_fit, self.curve.right_fit)
             offset = self.measure_offset(self.curve.left_fit, self.curve.right_fit)
@@ -188,20 +237,24 @@ if __name__ == "__main__":
         print(image.min(), image.max())
 
         cv2.imshow('image', image)
-        cv2.imwrite('../visualized_lane.jpg', image)
+        #cv2.imwrite('../output_images/visualized_lane.jpg', image)
         cv2.waitKey(15000)
 
     if False:
-        from moviepy.editor import VideoFileClip
-        clip1 = VideoFileClip("../project_video.mp4")
-        p = Pipeline_LanePixels()
-        print("Duration of clip: ", clip1.duration)
-        print("FPS of clip:, ", clip1.fps)
-        i_frame_ms = 1 / clip1.fps * 1000  # Interval between frames in milliseconds
-        print("Interval between frames {}ms".format(i_frame_ms))
-        frame_iter = clip1.iter_frames()
+        #from moviepy.editor import VideoFileClip
+        from Camera import CameraVideoClipMPY as Cam
 
-        for frame in frame_iter:
+        cam = Cam.CameraBaseVideoClipMPY("../project_video.mp4")
+        #clip1 = VideoFileClip("../project_video.mp4")
+        #clip1 = VideoFileClip("../challenge_video.mp4")
+        p = Pipeline_LanePixels()
+        print("Duration of clip: ", cam.clip.duration)
+        print("FPS of clip:, ", cam.clip.fps)
+        i_frame_ms = 1 / cam.clip.fps * 1000  # Interval between frames in milliseconds
+        print("Interval between frames {}ms".format(i_frame_ms))
+        #frame_iter = clip1.iter_frames()
+
+        for frame in cam:
             # Convert back to bgr
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             # Apply pipeline

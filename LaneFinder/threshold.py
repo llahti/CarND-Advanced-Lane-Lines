@@ -92,7 +92,6 @@ class Color:
         """Note: after conversion H-channel values are 0...360. """
         return cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
 
-
 class GradientMagDir:
     """Magnitude and Direction gradient threshold.
     

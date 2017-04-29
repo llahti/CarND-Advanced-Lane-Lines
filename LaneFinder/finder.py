@@ -297,7 +297,7 @@ if __name__ == "__main__":
         # and HLS color space
         image_warped = Color.bgr2hls(image_warped)
         # Threshold image to expose lane pixels
-        thresholded = p.threshold(image_warped)
+        thresholded = p.threshold_color(image_warped)
         return thresholded
 
     # Instantiate camera, load calib params and undistort

@@ -57,7 +57,7 @@ Here I will consider the rubric points individually and describe how I addressed
 
 ### Writeup / README
 
-####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
+#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
 
 You're reading it!
 
@@ -128,7 +128,7 @@ grid, but there are circular grids as well.
 In order to get good results nearly 20 images should be used to generate camera 
 matrix and coefficients.
 
-All my camera calibration code is located in `calibrate.py` file.
+All my camera calibration code is located in `Camera/CameraBase.py` file.
 
 ### Preparations
 
@@ -216,6 +216,9 @@ From below image you can see how undistort corrects distorted images.
 
 ### Color Threshold and Gradients Threshold
 
+Threshold code is located in `LaneFinder/threshold.py` File. It is the used in 
+pipeline code which is located in `apply()` method in `LaneFinder/pipeline.py`
+
 OK. Images are now undistorted and the next step in this project is to find out 
 how to find those lane lines. In my project I'm using methods which i describe in 
 below text. Generally single method can extract some information from images and 
@@ -225,6 +228,8 @@ For human being lane line detection is trivial task. You just find lines which
 divide lanes and are white or yellow in color. 
 
 #### Color Threshold
+
+Color threshold class is in `LaneFinder/threshold.py` and starting from line 5.
 
 Purpose of color thresholding is to find areas from image by predefined color. 
 In my project I'm using this method to find yellow and white colors.
@@ -248,6 +253,8 @@ information of yellow and white lanes.
 
 ### Gradient Threshold
 
+Gradient threshold class is in `LaneFinder/threshold.py` and starting from line 95.
+
 In order to be more confident about the lane line locations I'm also using 
 gradient thresholding. Specifically gradient direction thresholding together 
 with gradient magnitude thresholding. 
@@ -263,6 +270,8 @@ is similar to lane lines are visible.
 
 
 ### Perspective Transform
+
+Perspective transform class (`Perspective`) is in `LaneFinder/transformation.py`
 
 Perspective transform is important tool in this project as it allows us to 
 transform image so that we can see road from birds perspective. This makes it 
@@ -288,6 +297,8 @@ centric view.
 
 ### Sliding Window Search
 
+Sliding Window search is in `LaneFinder/finder.py` starting from line 18.
+
 After we have nicely warped binary image and all the lane pixels found i begin 
 to locate lane lines. First step on finding a lane line is to locate it's base 
 which is nearest to the car. This is done by taking histogram of bottom half of 
@@ -308,6 +319,8 @@ binary image.
 
 ### Curve Search
 
+"Curve Search" is in `LaneFinder/finder.py` starting from line 159.
+
 When we know initial lane curves we can begin to use more optimized searching 
 method. In this "curve" search we can search lane lines by using the curves 
 we already know.
@@ -319,6 +332,8 @@ vicinity of those curves. Green area is the search area.
 
 
 ### Calculating Curvature & Offset
+
+Code is located in `LaneFinder/pipeline.py`.
 
 Both of these calculations are done in LaneFinder.pipeline. Curvature is 
 calculated in method `measure_curvature(self, left_fit, right_fit)` which 
@@ -335,11 +350,11 @@ distance from lane center.
 Above I described single elements in my pipeline and here is short summary.
 Main portion of pipeline is located in `PipeLine_LanePixels.apply()`
 
-1. Undistort - Camera.undistort()
-2. Warp - Pipeline_LanePixels.warp()
-3. Convert uint8 to float32 image - Pipeline_LanePixels.apply()
-4. Convert BGR to HLS colorspace - Pipeline_LanePixels.apply()
-5. Threshold - Pipeline_LanePixels.threshold()
+1. Undistort
+2. Warp
+3. Convert uint8 to float32 image
+4. Convert BGR to HLS colorspace 
+5. Threshold 
 5.1 Gaussian Blur
 5.2 Hue Threshold
 5.3 Lightness Threshold
@@ -351,7 +366,7 @@ Main portion of pipeline is located in `PipeLine_LanePixels.apply()`
 6. Find lane pixels - LaneFinder/finder.py
 6.1 First shot with sliding window search
 6.2 Consequent frames with curve search
-7. Visualize lanes on warped empty image - LaneFinder/finder.py 
+7. Visualize lanes on warped empty image
 8. Measure curvature and offset - Pipeline_LanePixels.measure_curvature and offset
 9. Unwarp visualized lane and combine with original image - Pipeline_LanePixels.apply()
 10. Add measurements to image - Pipeline_LanePixels.apply()
@@ -380,8 +395,9 @@ perspective transformations.
 There are still improvements needed. Particularly on lane detection and 
 how to make detection stable.
 
-Also performance needs improvements. I have been trying pipeline with with smaller 
-warped image size and it was much faster, but not as reliable.
+Also performance needs improvements. I have been trying pipeline with different size
+warped image sizes and when images got bigger i.e. 512x1024 performance begin 
+to degrade seemingly.
 
 
 ## Output Images

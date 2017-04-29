@@ -156,10 +156,11 @@ class SlidingWindow:
         return out_img
 
 
-
-class Curve:
+class CurveSearch:
     def __init__(self, left_fit, right_fit, margin=30, image_size=(256, 512)):
         """
+        This lane finding algorith search lane within vicinity of existing lane curve given by left and right fits.
+        Search margin is defined by margin parameter. Curve fit is updated on each iteration.
         
         :param left_fit: Starting curve for fitting 
         :param right_fit: Starting curve for fitting 
@@ -321,7 +322,7 @@ if __name__ == "__main__":
 
     #sw.visualize_lanes(binary_warped)
 
-    c = Curve(sw.left_fit, sw.right_fit)
+    c = CurveSearch(sw.left_fit, sw.right_fit)
     c.find(binary_warped)
     c.visualize(binary_warped)
     print(c.left_fit, c.right_fit)

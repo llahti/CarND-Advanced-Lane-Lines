@@ -1,6 +1,6 @@
 from LaneFinder.threshold import Color, GradientMagDir
 from LaneFinder.transformations import Perspective
-from LaneFinder.finder import SlidingWindow, Curve
+from LaneFinder.finder import SlidingWindow, CurveSearch
 import numpy as np
 import cv2
 
@@ -68,10 +68,14 @@ class Pipeline_LanePixels:
         self.thresholds_gradient = [gmd_lightness, gmd_saturation]
 
     def measure_curvature(self, left_fit, right_fit):
-        """Measure curve radius. This method scales measurement to real world 
-        units [m], by using static calibration ym_per_pix and xm_per_pix."""
-        # Scaling of fitted curve
+        """
+        Measure curve radius. This method scales measurement to real world 
+        units [m], by using static calibration ym_per_pix and xm_per_pix.
         # https://discussions.udacity.com/t/pixel-space-to-meter-space-conversion/241646/7
+        
+        :param left_fit: Left lane line polynomial
+        :param right_fit: Right lane line polynomial
+        """
 
         # Define conversions in x and y from pixels space to meters
         ym_per_pix = 3 / 80  # meters per pixel in y dimension
@@ -200,8 +204,8 @@ class Pipeline_LanePixels:
         # Find lanes and fit curves
         if not self.curve:
             self.sw.find(binary)
-            self.curve= Curve(self.sw.left_fit, self.sw.right_fit,
-                              image_size=self.warped_image_size, margin=20)
+            self.curve= CurveSearch(self.sw.left_fit, self.sw.right_fit,
+                                    image_size=self.warped_image_size, margin=20)
             lane = self.sw.visualize_lane()
             curve_rad = self.measure_curvature(self.sw.left_fit, self.sw.right_fit)
             offset = self.measure_offset(self.sw.left_fit, self.sw.right_fit)
@@ -222,7 +226,7 @@ class Pipeline_LanePixels:
 
 if __name__ == "__main__":
 
-    if True:
+    if False:
         #image = cv2.imread(
         #    './test_images/challenge_video.mp4_tarmac_edge_separates.jpg')
         image = cv2.imread(
@@ -240,7 +244,7 @@ if __name__ == "__main__":
         #cv2.imwrite('../output_images/visualized_lane.jpg', image)
         cv2.waitKey(15000)
 
-    if False:
+    if True:
         #from moviepy.editor import VideoFileClip
         from Camera import CameraVideoClipMPY as Cam
 

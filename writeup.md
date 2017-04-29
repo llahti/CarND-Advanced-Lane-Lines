@@ -409,7 +409,7 @@ Here is summarize all generated output images
 
 ### Undistorted Image
 
-[Calibration Grid Corners](./output_images/01.jpg)
+[Undistorted grid and example image](./output_images/01.jpg)
 
 ### Warped image
 
@@ -421,7 +421,7 @@ Here is summarize all generated output images
 #### Saturation Channel
 [Thresholded Saturation](./output_images/threshold_color_1.jpg)
 #### Lightness Channel
-[Thresholded Saturation](./output_images/threshold_color_2.jpg)
+[Thresholded Lightness](./output_images/threshold_color_2.jpg)
 #### Red Channel
 [Thresholded Red](./output_images/threshold_color_3.jpg)
 #### Summed Color Thresholds
@@ -438,3 +438,5 @@ Here is summarize all generated output images
 [Threshold Gradients](./output_images/threshold_gradient.jpg)
 #### Final Binary Threshold
 [Final Threshold](./output_images/threshold_final.jpg)
+#### Final Result
+[Visualized Lane with measurements](./output_images/visualized_lane.jpg)

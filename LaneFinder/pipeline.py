@@ -106,7 +106,7 @@ class Pipeline_LanePixels:
         y_val = self.warped_image_size[1] / 2
         # Camera is not exactly on center of car so we need to compensate it with this number
         # It is calculated by measuring the center of lane from "straight_lines1.jpg"
-        x_correction = -134
+        x_correction = -67
         base_leftx  = left_fit[0]  * y_val ** 2 + left_fit[1]  * y_val + left_fit[2]
         base_rightx = right_fit[0] * y_val ** 2 + right_fit[1] * y_val + right_fit[2]
 
@@ -226,7 +226,7 @@ class Pipeline_LanePixels:
 
 if __name__ == "__main__":
 
-    if False:
+    if True:
         #image = cv2.imread(
         #    './test_images/challenge_video.mp4_tarmac_edge_separates.jpg')
         image = cv2.imread(
@@ -241,10 +241,10 @@ if __name__ == "__main__":
         print(image.min(), image.max())
 
         cv2.imshow('image', image)
-        #cv2.imwrite('../output_images/visualized_lane.jpg', image)
+        cv2.imwrite('../output_images/visualized_lane.jpg', image)
         cv2.waitKey(15000)
 
-    if True:
+    if False:
         #from moviepy.editor import VideoFileClip
         from Camera import CameraVideoClipMPY as Cam
 

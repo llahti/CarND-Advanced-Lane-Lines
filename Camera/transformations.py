@@ -6,6 +6,8 @@ class Perspective:
         # Define source and destination image sizes
         self.dst_size = dst_size
         self.src_size = src_size
+        self.src_points = psource
+        self.dst_points = pdest
         # Compute perspective transform
         self.M = cv2.getPerspectiveTransform(psource, pdest)
         # Compute inverse perspective transform

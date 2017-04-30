@@ -37,9 +37,13 @@ class Base:
         self.crop_rect = crop_rect
         self.warp_mtx = warp_mtx
         # if warping is defined then initialize perspective transform
+        self.transformation = None
         if do_warp:
-            self.persp_trans = Perspective(self.warp_mtx[0], self.warp_mtx[1],
-                                           warp_src_img_size, warp_dst_img_size)
+            self.transformation = Perspective(self.warp_mtx[0], self.warp_mtx[1],
+                                              warp_src_img_size, warp_dst_img_size)
+
+        # self.transformation = property(get_transformation)
+
         # Re-Projection error from calibration
         self.re_projection_error = None
 
@@ -181,11 +185,11 @@ class Base:
 
     def warp(self, image):
         """Warps image."""
-        return self.persp_trans.apply(image)
+        return self.transformation.apply(image)
 
     def warp_inverse(self, image):
         """Inverse warp"""
-        return self.persp_trans.apply_inverse(image)
+        return self.transformation.apply_inverse(image)
 
 
 if __name__ == '__main__':

@@ -3,21 +3,45 @@ import numpy as np
 import cv2
 import glob
 import tqdm
+from Camera.transformations import Perspective
 
 
-class CameraBase:
+class Base:
     """Hardware abstraction for camera. Currently this is "semi-abstract" base class 
     and it handles only camera calibration related stuff. """
 
-    def __init__(self, name=None, undistort=True):
+    def __init__(self, name=None, do_undistort=False, do_crop=False,
+                 do_warp=False, crop_rect=None, warp_mtx=None,
+                 warp_src_img_size=None, warp_dst_img_size=None):
         """
         Opens camera session.
         
-        :param name: If not given open first camera which is available,
-        :param undistort: If True then images will be undistorted as default.
+        :param name: If not given open first camera which is available.
+        :param do_undistort: If true then captured image is undistorted as default.
+        :param do_crop: If true then captured image is cropped as default.
+        :param do_warp: If true then captured image is warped as default.
+        :param croprect: Defines the cropped rectangle as ((x1, y1), (x2, y2)).
+        :param warp_mtx: Defines source and destination warp matrices (src, dst)
+        :param warp_src_img_size: Source image size for warp initialization
+        :param warp_dst_img_size: Destination image size for warp initialization.
         """
         # Initialize camera calibration parameters
         self.mtx, self.dist, self.rvecs, self.tvecs = None, None, None, None
+        # Define what transforms will be done
+        self.do_undistort = do_undistort
+        self.do_crop = do_crop
+        self.do_warp = do_warp
+        # Define pipeline
+        self.pipeline = self._create_pipeline(do_undistort, do_crop, do_warp)
+        # Define needed parameters for transformations
+        self.crop_rect = crop_rect
+        self.warp_mtx = warp_mtx
+        # if warping is defined then initialize perspective transform
+        if do_warp:
+            self.persp_trans = Perspective(self.warp_mtx[0], self.warp_mtx[1],
+                                           warp_src_img_size, warp_dst_img_size)
+        # Re-Projection error from calibration
+        self.re_projection_error = None
 
     def __iter__(self):
         assert True, "Base class does not implement this method."
@@ -26,6 +50,24 @@ class CameraBase:
     def __next__(self):
         assert True, "Base class does not implement this method."
         return None
+
+    def _create_pipeline(self, do_undistort, do_crop, do_warp):
+        """Creates a pipeline to do undistortion, cropping and warping."""
+        pl = []
+        if do_undistort:
+            pl.append(self.undistort)
+        if do_crop:
+            pl.append(self.crop)
+        if do_warp:
+            pl.append(self.warp)
+        return pl
+
+    def apply_pipeline(self, image):
+        """This function applies pipeline to image. Pipeline is a collection of 
+        image editing functions defined in self.pipeline."""
+        for f in self.pipeline:
+            image = f(image)
+        return image
 
     def calibrate_folder(self, pattern='./camera_cal/*.jpg', nxy=(9, 6), verbose=0):
         """
@@ -98,8 +140,8 @@ class CameraBase:
 
         # Calculate calibration coefficients
         #ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
-        ret, self.mtx, self.dist, self.rvecs, self.tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
-        return ret
+        self.re_projection_error, self.mtx, self.dist, self.rvecs, self.tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+        return self.re_projection_error
 
     def undistort(self, image):
         """
@@ -110,11 +152,23 @@ class CameraBase:
         """
         return cv2.undistort(image, self.mtx, self.dist, None, None)
 
+    def crop(self, image):
+        """Crops image and returns cropped version of it."""
+        # crop rectangle is defined as ((x1, y1), (x2, y2))
+        x1 = self.crop_rect[0][0]
+        y1 = self.crop_rect[0][1]
+        x2 = self.crop_rect[1][0]
+        y2 = self.crop_rect[1][1]
+        # NOTE: numpy slicing [y: y + h, x: x + w]
+        image = image[y1:y2, x1:x2]
+        return image
+
     def save_params(self, filename):
         """Save calibration parameters to file.
         :param filename: Filename (use *.npy file extension).
         """
         np.save(filename, [self.mtx, self.dist, self.rvecs, self.tvecs])
+
 
     def load_params(self, filename):
         """Loads calibration parameters from file."""
@@ -125,9 +179,18 @@ class CameraBase:
         self.tvecs = np_array[3]
 
 
+    def warp(self, image):
+        """Warps image."""
+        return self.persp_trans.apply(image)
+
+    def warp_inverse(self, image):
+        """Inverse warp"""
+        return self.persp_trans.apply_inverse(image)
+
+
 if __name__ == '__main__':
-    cam = CameraBase()
+    cam = Base()
 
     ret = cam.calibrate_folder('./camera_cal/*.jpg', (9, 6), verbose=1)
-    cam.save_params('../udacity_project_calibration.npy')
-    cam.load_params('../udacity_project_calibration.npy')
+    #cam.save_params('../udacity_project_calibration.npy')
+    #cam.load_params('../udacity_project_calibration.npy')

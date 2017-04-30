@@ -1,3 +1,4 @@
 """Camera-module"""
-from . import CameraBase
-from . import CameraVideoClipMPY
+from . Base import Base
+from . VideoClipMPY import VideoClipMPY
+from . import transformations

@@ -36,6 +36,9 @@ class Base:
         # Define needed parameters for transformations
         self.crop_rect = crop_rect
         self.warp_mtx = warp_mtx
+        # Save src and dst image sizes
+        self.warp_src_img_size = warp_dst_img_size
+        self.warp_dst_img_size = warp_dst_img_size
         # if warping is defined then initialize perspective transform
         self.transformation = None
         if do_warp:
@@ -46,6 +49,10 @@ class Base:
 
         # Re-Projection error from calibration
         self.re_projection_error = None
+
+        # Store latest images
+        self.latest_raw = None
+        self.latest_pipelined = None
 
     def __iter__(self):
         assert True, "Base class does not implement this method."
@@ -173,7 +180,6 @@ class Base:
         """
         np.save(filename, [self.mtx, self.dist, self.rvecs, self.tvecs])
 
-
     def load_params(self, filename):
         """Loads calibration parameters from file."""
         np_array = np.load(filename)
@@ -181,7 +187,6 @@ class Base:
         self.dist = np_array[1]
         self.rvecs = np_array[2]
         self.tvecs = np_array[3]
-
 
     def warp(self, image):
         """Warps image."""

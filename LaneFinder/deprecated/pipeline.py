@@ -1,8 +1,9 @@
-from LaneFinder.threshold import Color, GradientMagDir
-from LaneFinder.transformations import Perspective
-from LaneFinder.finder import SlidingWindow, CurveSearch
-import numpy as np
 import cv2
+import numpy as np
+
+from LaneFinder.finder import SlidingWindow, CurveSearch
+from LaneFinder.threshold import Color, GradientMagDir
+
 
 class Pipeline_LanePixels:
     """This pipeline detects lane pixels, transform image to bird view and 
@@ -43,7 +44,7 @@ class Pipeline_LanePixels:
                         [self.warped_image_size[0] * 0.2, self.warped_image_size[1] * 0]],  # * 0.1
                        dtype=np.float32)
 
-        self.persp_trans = Perspective(src, dst, self.input_image_size, self.warped_image_size)
+        #self.persp_trans = Perspective(src, dst, self.input_image_size, self.warped_image_size)
 
     def __init_threshold(self):
         """
@@ -117,13 +118,13 @@ class Pipeline_LanePixels:
         measured_offset = (center_of_image - measured_center) * xm_per_pix
         return measured_offset
 
-    def warp(self, image):
-        """Wrapper for perspective transformation."""
-        return self.persp_trans.apply(image)
+    #def warp(self, image):
+    #    """Wrapper for perspective transformation."""
+    #    return self.persp_trans.apply(image)
 
-    def warp_inverse(self, image):
-        """Wrapper for inverse perspective transformation."""
-        return self.persp_trans.apply_inverse(image)
+    #def warp_inverse(self, image):
+    #    """Wrapper for inverse perspective transformation."""
+    #    return self.persp_trans.apply_inverse(image)
 
     def threshold_color(self, image):
         """
@@ -189,6 +190,14 @@ class Pipeline_LanePixels:
         """Applies pipeline to image.
         :param image: Image have to be uint8 BGR color image."""
 
+        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # Convert to float image
+        float_im = bgr.copy().astype('float32') / 255
+        blurred = cv2.GaussianBlur(float_im, ksize=(9, 9), sigmaX=1, sigmaY=9)
+        cplanes = colors.bgr2cpaces(blurred)
+        lanes, py, pw = finder.find_lane_pixels(cplanes, pfilter, gamma=0.4)
+
+
         # Warp perspective
         image_warped = self.warp(image)
         # Convert image to float data format
@@ -246,9 +255,9 @@ if __name__ == "__main__":
 
     if False:
         #from moviepy.editor import VideoFileClip
-        from Camera import CameraVideoClipMPY as Cam
+        from Camera import VideoClipMPY as Cam
 
-        cam = Cam.CameraBaseVideoClipMPY("../project_video.mp4")
+        cam = Cam.CameraVideoClipMPY("../project_video.mp4")
         #clip1 = VideoFileClip("../project_video.mp4")
         #clip1 = VideoFileClip("../challenge_video.mp4")
         p = Pipeline_LanePixels()

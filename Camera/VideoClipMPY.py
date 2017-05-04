@@ -34,8 +34,11 @@ class VideoClipMPY(Base):
         return self
 
     def __next__(self):
+        """Return next frame from video clip."""
         next_frame = next(self.clip_iterator)
-        return self.apply_pipeline(next_frame)
+        self.latest_raw = next_frame
+        self.latest_pipelined = self.apply_pipeline(next_frame)
+        return self.latest_pipelined
 
 if __name__ == "__main__":
     # Test Pipeline

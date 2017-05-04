@@ -26,9 +26,9 @@ class UdacityAdvLane(VideoClipMPY):
                                    (crop_rect[1][1]) - crop_rect[0][1])
 
         # Define Perspective transformation
-        y_top = 80  # Y-top
+        y_top = 90  # Y-top
         y_bot = 340  # Y-bottom
-        x_tl = 610
+        x_tl = 595
         x_bl = 246
         src = np.array([[self.cropped_image_size[0]-x_tl, y_top],  # Top-Right
                         [self.cropped_image_size[0]-x_bl, y_bot],  # Bottom-Right
@@ -39,10 +39,10 @@ class UdacityAdvLane(VideoClipMPY):
 
         # Destination array is relative to destination image size
         dst = np.array(
-            [[warped_image_size[0] * 0.6, warped_image_size[1] * 0],
-             [warped_image_size[0] * 0.6, warped_image_size[1]* 0.99],
-             [warped_image_size[0] * 0.4, warped_image_size[1]* 0.99],
-             [warped_image_size[0] * 0.4, warped_image_size[1] * 0]],
+            [[warped_image_size[0] * 0.63, warped_image_size[1] * 0], # Top-Right
+             [warped_image_size[0] * 0.63, warped_image_size[1]* 0.99], # Bottom-Right
+             [warped_image_size[0] * 0.37, warped_image_size[1]* 0.99], # Bottom-Left
+             [warped_image_size[0] * 0.37, warped_image_size[1] * 0]], # Top-Left
             dtype=np.float32)
 
         # Initialize super class with needed parameters
@@ -56,8 +56,8 @@ class UdacityAdvLane(VideoClipMPY):
         self.calib_param_file = Camera.__path__[0] + '/udacity_project_calibration.npy'
         self.load_params(self.calib_param_file)
 
-        # Define x and y scale to real world dimensions
+        # Define x and y scale to real world dimensions [m/px]
         # lane width = 54px / 3.7m
         # dashed line length = 38px / 3m
-        self.scale_x = 54 / 3.7
-        self.scale_y = 38 / 3.
+        self.scale_x = 3.7 / 70
+        self.scale_y = 3. / 58

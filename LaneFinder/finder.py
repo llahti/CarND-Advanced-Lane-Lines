@@ -144,6 +144,10 @@ class LaneFinder:
         for lane in self.lanes:
             lane.scale_x, lane.scale_y = camera.scale_x, camera.scale_y
 
+
+        # Set X origin on center of image
+        self.origin_x = camera.warp_src_img_size[0] / 2
+
         # Curve search is still empty as we don't know the initial curve locations
         self.curve = None
 
@@ -160,7 +164,7 @@ class LaneFinder:
         blurred = cv2.GaussianBlur(bgr_uint8_image, ksize=(9, 9), sigmaX=1, sigmaY=9)
         cplanes = colors.bgr_uint8_2_cpaces_float32(blurred)
         lanes, py, pw = find_lane_pixels(cplanes, self.pfilter,
-                                                gamma=0.4)
+                                                gamma=0.3)
 
         binary = lanes
         for lane in self.lanes:
@@ -169,11 +173,16 @@ class LaneFinder:
         left_fit = self.lanes[0].fit.ema()
         right_fit = self.lanes[1].fit.ema()
 
-        print("left fit:  ", left_fit, "\n",
-              "right fit: ", right_fit)
-        print(self.lanes[0].line_base_pos.ema(), self.lanes[1].line_base_pos.ema())
-        result = lanes
-        plt.imshow(self.lanes[1].lane_pixels)
+        print("left fit:  ({:.4f}, {:.4f}, {:.4f}), "
+              "Right fit: ({:.4f}, {:.4f}, {:.4f})".format(left_fit[0], left_fit[1], left_fit[2],
+                                                           right_fit[0], right_fit[1], right_fit[2]))
+        print("Left pos: {:.3f}, Right pos: {:.3f}".format(self.lanes[0].line_base_pos.ema(),
+                                                           self.lanes[1].line_base_pos.ema()))
+        result = (self.lanes[0].lane_pixels | self.lanes[1].lane_pixels) * 255
+
+        rects = self.lanes[0].SWS.draw_rectangles()
+        plt.imshow(rects)
+        #plt.imshow(self.lanes[1].lane_pixels)
         plt.show()
 
         # Find lanes and fit curves
@@ -248,7 +257,7 @@ class LaneLine:
         :param lane_pixels: binary image of all left and right lane pixels.
         """
         if self.SWS is None:
-            self.__initialize_SWS(lane_pixels, x_margin=30, y_size=self.y_size,
+            self.__initialize_SWS(lane_pixels, x_margin=20, y_size=self.y_size,
                                   w_height=30, nwindows=15)
             # In first update we need to setup data structures
             self.__first_update(lane_pixels)
@@ -281,7 +290,7 @@ class LaneLine:
         """This function contains data structure initializations."""
         lane_pixels, ratio = self.SWS.find(lane_pixels)
         self.lane_pixels = lane_pixels
-        print(ratio)
+        # print(ratio)
         self.detected = ratio > self.detect_ratio_threshold
         # First update of polynomials
         fit = fit_poly2nd(lane_pixels)
@@ -364,7 +373,7 @@ class SearchWindow:
     >>> sw_next = sw.next_rectangle()
     >>> sw.rect
     """
-    def __init__(self, rect, threshold=0.05, noise_limit=0.3, sigma=5,
+    def __init__(self, rect, threshold=0.04, noise_limit=0.3, sigma=5,
                  direction=DIR_DESCENDING, rcoef=1):
         """
         This is a search window.
@@ -372,6 +381,7 @@ class SearchWindow:
         :param rect: Search rectangle ((x1, y1), (x2, y2))
         :param threshold: ratio of pixels which have to be hot in image in order find line successfully
         :param noise_limit: Ratio of pixels which will lead to rejection
+        :param sigma: OBSOLETE! 
         """
         self.rect = rect
         self.threshold=threshold
@@ -406,7 +416,7 @@ class SearchWindow:
         >>> SearchWindow.build_rectangle(50, 20, 511, 10, DIR_DESCENDING)
         ((30, 501), (71, 511))
         """
-        print(x_center, x_margin, y_start, w_height, dir)
+        #print(x_center, x_margin, y_start, w_height, dir)
         x_left, x_right = (x_center - np.absolute(x_margin)), (x_center + np.absolute(x_margin) +1)
         w_height = w_height * dir
         if dir == DIR_DESCENDING:
@@ -446,14 +456,14 @@ class SearchWindow:
         noise_error = ratio > self.noise_limit
 
         # Leave pixels only on sigma distance from the center line
-        sliced_area[:, 0:int(center) - self.sigma] = 0
-        sliced_area[:, int(center) + self.sigma:sliced_area.shape[1]] = 0
+        #sliced_area[:, 0:int(center) - self.sigma] = 0
+        #sliced_area[:, int(center) + self.sigma:sliced_area.shape[1]] = 0
 
         # Create return image (As default initialized to zeros)
         result_img = np.zeros_like(binary_image)
         center_global = None
         if found:
-            # Add window offset to center
+            # Convert local window coordinates to global image coordinates
             center_global = center + x[0][0]
             result_img[x[0][1]:x[1][1], x[0][0]:x[1][0]] = sliced_area
         else:
@@ -579,13 +589,35 @@ class SlidingWindowSearch:
 
         return result_img, found_ratio
 
+    def overlay_rectangles(self, image, color=(255,0,0), thickness=3, alpha=1):
+        """
+        Overlay search rectangles on given image.
+        :param image: 3 channel image
+        :return: original + overlay
+        """
+        rectangles = self.draw_rectangles(img_size=(image.shape[1],image.shape[0]),
+                                          thickness=thickness)
+        result = cv2.addWeighted(image, 1, rectangles, alpha, 0)
+        return result
 
 
+    def draw_rectangles(self, img_size=(256, 512), color=(255,0,0), thickness=3):
+        """
+        Returns visualized rectangles
+        :param img_size: Size of the output image (Width, Height)
+        :param color: Color of the rectangles (RED, GREEN, BLUE
+        :return: uint8 BGR image with 3 channels
+        """
+        # Empty image to draw rectangles
+        shape = (img_size[1],img_size[0], 3)
 
+        empty_img = np.zeros(shape, dtype=np.uint8)
 
-
-
-
+        # Concatenate rectangle lists and draw those on image
+        for w in self.search_w:
+            pt1, pt2 = w.rect
+            cv2.rectangle(empty_img, pt1, pt2, color, thickness)
+        return empty_img
 
 
 
@@ -806,7 +838,7 @@ class CurveSearch:
         zero_img = np.zeros_like(binary_warped, dtype=np.uint8)
         #out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
         out_img = np.dstack((zero_img, zero_img, zero_img)) * 255
-        print(out_img.shape)
+        # print(out_img.shape)
         window_img = np.zeros_like(out_img)
         # Color in left and right line pixels
         out_img[self.nonzeroy[self.left_lane_inds], self.nonzerox[self.left_lane_inds]] = [255, 0, 0]
@@ -989,17 +1021,31 @@ if __name__ == "__main__":
         thresholded = p.threshold_color(image_warped)
         return thresholded
 
-    # Instantiate camera, load calib params and undistort
-    cam = Cam('../project_video.mp4')
-    #cam.load_params("../udacity_project_calibration.npy")
-    undistorted = cam.undistort(image)
-    lf = LaneFinder(cam)
-    warped = cam.apply_pipeline(image)
-    img = lf.apply(warped)
+    # Test with single image
+    if True:
+        # Instantiate camera, load calib params and undistort
+        cam = Cam('../project_video.mp4')
+        #cam.load_params("../udacity_project_calibration.npy")
+        undistorted = cam.undistort(image)
+        lf = LaneFinder(cam)
+        warped = cam.apply_pipeline(image)
+        img = lf.apply(warped)
 
-    #cspaces = colors.bgr_uint8_2_cpaces_float32(warped)
-    #print(cspaces.shape, cspaces.dtype)
-    #p = load_propability_filter()
-    #img, py ,pw = find_lane_pixels(cspaces, p, gamma=0.4)
-    show_image(img)
+        #cspaces = colors.bgr_uint8_2_cpaces_float32(warped)
+        #print(cspaces.shape, cspaces.dtype)
+        #p = load_propability_filter()
+        #img, py ,pw = find_lane_pixels(cspaces, p, gamma=0.4)
+        show_image(img)
+
+    # Test with video
+    if False:
+        cam = Cam('../project_video.mp4')
+        lf = LaneFinder(cam)
+        for frame in cam:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            pipelined = lf.apply(frame)
+            cv2.imshow('video', pipelined)
+            cv2.waitKey(1)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 

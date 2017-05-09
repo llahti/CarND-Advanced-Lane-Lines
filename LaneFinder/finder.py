@@ -26,12 +26,62 @@ def fit_poly2nd(binary_image):
     return fit
 
 
-def poly2xy_pairs(fit, y_max):
+def poly_2nd_mse(fit1, fit2, y_range):
+    """
+    Calculates mean squared error of 2 second order polynomials. 
+    Polynomials are fit1 and fit2 are returned from np.polyfit(). 
+    
+    :param fit1: 
+    :param fit2: 
+    :param y_range: Evaluation range (Y-start, Y-stop), range is inclusive
+    :return: mean squared error
+    """
+    plot_y = np.arange(y_range[0], y_range[1]+1, dtype=np.float32)
+    x1 = fit1[0] * plot_y ** 2 + fit1[1] * plot_y + fit1[2]
+    x2 = fit2[0] * plot_y ** 2 + fit2[1] * plot_y + fit2[2]
+
+    mse = np.power((x1-x2), 2).mean()
+    return mse
+
+
+def poly_2nd_distance(fit1, fit2, y_range):
+    """
+    Calculates mean distance, minimum distance, max_distance and standard 
+    deviation of two second order polynomials on given y-range
+     
+    Polynomials are fit1 and fit2 are returned from np.polyfit(). 
+
+    :param fit1: 
+    :param fit2: 
+    :param y_range: Evaluation range (Y-start, Y-stop), range is inclusive
+    :return: (mean_distance, min_distance, max_distance, std_distance)
+    """
+    plot_y = np.arange(y_range[0], y_range[1] + 1, dtype=np.float32)
+    x1 = fit1[0] * plot_y ** 2 + fit1[1] * plot_y + fit1[2]
+    x2 = fit2[0] * plot_y ** 2 + fit2[1] * plot_y + fit2[2]
+
+    diff = (x1 - x2)
+    mean_distance = diff.mean()
+    std_distance = diff.std()
+    min_distance = diff.min()
+    max_distance = diff.max()
+    return mean_distance, min_distance, max_distance, std_distance
+
+
+def poly2xy_pairs(fit, y_range):
     """Converts polynomial coeffients to x,y pairs of curve.
-    >>> fit = fit(binaryimage)
-    >>> x,y = poly2xy_pairs(fit, 512)
-    >>> plt.plot(x,y)"""
-    ploty = np.linspace(0, y_max - 1, y_max)
+    :param fit: second order polynomial returned by np.polyfit
+    :param y_range: (y-start, y-stop) start value is inclusive, stop value is exclusive
+    
+    >>> fit = np.array([-5.67364304e-05,   3.78455991e-02,   9.80000000e+01])
+    >>> x,y = poly2xy_pairs(fit, (100, 104))
+    >>> x
+    array([ 101.21719561,  101.24363718,  101.26996529,  101.29617992])
+    >>> y
+    array([ 100.,  101.,  102.,  103.])
+    """
+
+    ploty = np.linspace(y_range[0], y_range[1] - 1, y_range[1]-y_range[0])
     x = fit[0] * ploty ** 2 + fit[1] * ploty + fit[2]
     return x, ploty
 
@@ -135,15 +185,14 @@ class LaneFinder:
         #self.sw = SlidingWindow(nwindows=9, margin=30, minpix=5,
         #                        image_size=self.warped_image_size)
 
-        y_size = camera.warp_dst_img_size[1]
-        sw_left = SlidingWindowSearch(100, 30, y_size, 20, 15)
-        sw_right = SlidingWindowSearch(170, 30, y_size, 20, 15)
-        self.lanes = [LaneLine(y_size, LaneLine.LEFT),
-                      LaneLine(y_size, LaneLine.RIGHT)]
-        # Set scaling parameters
-        for lane in self.lanes:
-            lane.scale_x, lane.scale_y = camera.scale_x, camera.scale_y
+        self.y_size = camera.warp_dst_img_size[1]
+        self.camera = camera
 
+        self.__init_search_windows()
+
+        # Error counter
+        self.error_count = 0
+        self.error_limit = 5
 
         # Set X origin on center of image
         self.origin_x = camera.warp_src_img_size[0] / 2
@@ -151,59 +200,81 @@ class LaneFinder:
         # Curve search is still empty as we don't know the initial curve locations
         self.curve = None
 
+        # Initialize lane propability filter
         self.pfilter = load_propability_filter()
+
+        # Data
+        self.data = {}
+
+        # Filter length
+        self.filter_length = 20
+
+        # Radius of curve and offset
+        self._curve_rad = Averager(self.filter_length, float(), with_value=False)
+        self._center_offset = Averager(self.filter_length, float(), with_value=False)
+
+    def __init_search_windows(self):
+        """Use this method to initialize sliding window search"""
+        self.lanes = [LaneLine(self.y_size, LaneLine.LEFT),
+                      LaneLine(self.y_size, LaneLine.RIGHT)]
+
+        # Set scaling parameters
+        for lane in self.lanes:
+            lane.scale_x, lane.scale_y = self.camera.scale_x, self.camera.scale_y
+
+    @property
+    def curve_radius(self):
+        return self._curve_rad.ema()
+
+    @property
+    def lane_offset(self):
+        return self._center_offset.ema()
 
     def apply(self, bgr_uint8_image):
         """Applies pipeline to image.
         :param bgr_uint8_image: Image have to be uint8 BGR color image."""
 
-        #bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        # Convert to float image
-        #float_im = bgr.copy().astype('float32') / 255
+        # Blur image to remove noise
         blurred = cv2.GaussianBlur(bgr_uint8_image, ksize=(9, 9), sigmaX=1, sigmaY=9)
+        # Convert to colorspaces object
         cplanes = colors.bgr_uint8_2_cpaces_float32(blurred)
+        # Find most propable lane pixels
         lanes, py, pw = find_lane_pixels(cplanes, self.pfilter,
-                                                gamma=0.3)
+                                                gamma_y=0.2, gamma_w=0.2)
 
-        binary = lanes
+        # Update lane line locations
         for lane in self.lanes:
             lane.update(lanes)
 
-        left_fit = self.lanes[0].fit.ema()
-        right_fit = self.lanes[1].fit.ema()
+        result = bgr_uint8_image
+        for lane in self.lanes:
+            result = lane.overlay_lane_fit(result, y_range=(200, 500),
+                                           color=(255, 0, 0), averaged=True, thickness=5)
+            result = lane.SWS.overlay_rectangles(result, color=(127,127,0), thickness=2, alpha=1)
+            result = lane.overlay_lane_pixels(result, color=(0, 0, 255) )
 
-        print("left fit:  ({:.4f}, {:.4f}, {:.4f}), "
-              "Right fit: ({:.4f}, {:.4f}, {:.4f})".format(left_fit[0], left_fit[1], left_fit[2],
-                                                           right_fit[0], right_fit[1], right_fit[2]))
-        print("Left pos: {:.3f}, Right pos: {:.3f}".format(self.lanes[0].line_base_pos.ema(),
-                                                           self.lanes[1].line_base_pos.ema()))
-        result = (self.lanes[0].lane_pixels | self.lanes[1].lane_pixels) * 255
+        self.sanity_check()
 
-        rects = self.lanes[0].SWS.draw_rectangles()
-        plt.imshow(rects)
-        #plt.imshow(self.lanes[1].lane_pixels)
-        plt.show()
+        # Calculate curvature and offset
+        lane_offset = measure_lane_center(self.lanes[0].fit.ema(),
+                                          self.lanes[0].fit.ema(),
+                                          y_eval=510, scale_x=self.camera.scale_x)
+        self._center_offset.put(lane_offset)
+        lane_curvature = (self.lanes[0].curve_radius + self.lanes[0].curve_radius) / 2.
+        self._curve_rad.put(lane_curvature)
 
-        # Find lanes and fit curves
-        # if not self.curve:
-        #     self.sw.find(binary)
-        #     self.curve = CurveSearch(self.sw.left_fit, self.sw.right_fit,
-        #                              image_size=self.warped_image_size,
-        #                              margin=20)
-        #     lane = self.sw.visualize_lane()
-        #     curve_rad = self.measure_curvature(self.sw.left_fit,
-        #                                        self.sw.right_fit)
-        #     offset = self.measure_offset(self.sw.left_fit, self.sw.right_fit)
-        # else:
-        #     self.curve.find(binary)
-        #     lane = self.curve.visualize_lane()
-        #     curve_rad = self.measure_curvature(self.curve.left_fit,
-        #                                        self.curve.right_fit)
-        #     offset = self.measure_offset(self.curve.left_fit,
-        #                                  self.curve.right_fit)
-        #
-        # non_warped_lane = self.warp_inverse(lane)
+
+        # Save data
+        self.data['img_blurred'] = blurred
+        self.data['cplanes'] = cplanes
+        self.data['img_lane_pixels'] = lanes
+        self.data['img_propability_yellow'] = py
+        self.data['img_propability_white'] = pw
+        self.data['img_input'] = bgr_uint8_image
+
+
+        non_warped_lane = self.camera.warp_inverse(result)
 
         # result = cv2.addWeighted(image, 1, non_warped_lane, 0.3, 0)
         # cv2.putText(result, "Curve Radius: {:.0f}m".format(curve_rad), (50, 50),
@@ -212,6 +283,79 @@ class LaneFinder:
         #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
 
         return result
+
+    def draw_lane(self, color=(0, 255, 0), y_range=(200,500)):
+        """Returns BGR image to where lane is visualized. Visialization is 
+        done in warped image coordinate system"""
+
+        # Lane is drawn on warped image
+        image_size = self.camera.warp_dst_img_size
+        # Generate x and y values for plotting
+        #ploty = np.linspace(0, image_size[1] - 1,
+        #                    image_size[1])
+        left_x, left_y = poly2xy_pairs(self.lanes[0].fit.ema(), y_range=y_range)
+        right_x, right_y = poly2xy_pairs(self.lanes[1].fit.ema(), y_range=y_range)
+        #left_fitx = left_fit[0] * ploty ** 2 + left_fit[
+        #                                                1] * ploty + \
+        #            left_fit[2]
+        #right_fitx = self.right_fit[0] * ploty ** 2 + self.right_fit[
+        #                                                  1] * ploty + \
+        #             self.right_fit[2]
+
+        # Create an image to draw on and an image to show the selection window
+        img_shape = (image_size[1], image_size[0], 3)
+        out_img = np.zeros(img_shape, dtype=np.uint8)
+
+        # Generate a polygon to illustrate the lane area
+        # And recast the x and y points into usable format for cv2.fillPoly()
+        left_line = np.array(
+            [np.transpose(np.vstack([left_x, left_y]))])
+        right_line = np.array([np.flipud(
+            np.transpose(np.vstack([right_x, right_y])))])
+        lane_pts = np.hstack((left_line, right_line))
+
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(out_img, np.int_([lane_pts]), color)
+        return out_img
+
+    def update_error(self, is_error):
+        """Handels updating errors"""
+        if is_error:
+            self.error_count += 1
+        else:
+            self.error_count -= 1
+            # This prevent error counter going negative
+            if is_error < 0:
+                    self.error_count = 0
+
+        if self.error_count > self.error_limit:
+            self.reset()
+
+    def reset(self):
+        """Reset lane finder"""
+        self.lanes = None
+        self.__init_search_windows()
+        self.error_count = 0
+
+    def sanity_check(self):
+        """This function conducts a sanity check on detected lane lines.
+        it checks lane parallellism and lane distance."""
+        res = poly_2nd_distance(self.lanes[1].fit.ema(), self.lanes[0].fit.ema(),
+                                y_range=(200, 500))
+        lane_target_distance = 70
+        lane_distance_tolerance = 8
+        abs_mean_error = np.absolute(res[0] - lane_target_distance)
+        if abs_mean_error > lane_distance_tolerance:
+            print("LaneFinder.sanity_check(): Lane distance mean error: {}".format(abs_mean_error))
+            self.update_error(True)
+        else:
+            self.update_error(False)
+        max_abs_error = np.max(np.absolute((np.array((res[1], res[2])) - lane_target_distance) ))
+        if max_abs_error > 10:
+            print("LaneFinder.sanity_check(): Lane distance abs max error: {}".format(max_abs_error))
+            self.update_error(True)
+        else:
+            self.update_error(False)
 
 class LaneLine:
     # https://classroom.udacity.com/nanodegrees/nd013/parts/fbf77062-5703-404e-b60c-95b78b2f3f9e/modules/2b62a1c3-e151-4a0e-b6b6-e424fa46ceab/lessons/40ec78ee-fb7c-4b53-94a8-028c5c60b858/concepts/7ee45090-7366-424b-885b-e5d38210958f
@@ -226,7 +370,7 @@ class LaneLine:
         self.lane_px_x = None
         # y values for detected line pixels
         self.lane_px_y = None
-        # Image of lane pixels
+        # Image of lane pixels, shape=(height, width), dtype=uint8
         self.lane_pixels = None
         # side (left or right)
         self.side = side
@@ -237,14 +381,61 @@ class LaneLine:
         # Fit
         self.fit = None
         # radius of curvature of the line in some units
-        self.radius_of_curvature = None
+        self.__radius_of_curvature = None
         # Buffer length
-        self.buffer_length = 5
+        self.buffer_length = 20
         # Scaling
         self.scale_x = 1
         self.scale_y = 1
         # Defines threshold of ratio of how many search window need to find lane
-        self.detect_ratio_threshold = 0.1
+        self.detect_ratio_threshold = 0.2
+        # Latest sanity check fails
+        self.sanity_check_results = None
+        # Error flag
+        self.error = False
+        # Sliding window search parameters
+        self.x_margin = 20
+        self.w_height = 25
+        self.nwindows = 16
+
+        # Lane Means Squared Error Reject Limit
+        self.mse_reject_limit = 8
+        # Initialize mse to 0 (mean squared error of lane compared to exp. running average)
+        self.__mse = Averager(self.buffer_length, float(0), with_value=True)
+
+    def __initialize_SWS(self, lane_pixels):
+        """Initializes sliding window search."""
+        left_x, right_x = find_initial_lane_centers(lane_pixels)
+        print("LaneLine.__initialze_SWS(): leftx={:.3f}, rightx={:.3f}".format(left_x, right_x))
+        if self.side == LaneLine.LEFT:
+            x_start = left_x
+        else:
+            x_start = right_x
+        self.SWS = SlidingWindowSearch(x_start, self.x_margin, self.y_size-5,
+                                       self.w_height, self.nwindows)
+
+    def __first_update(self, lane_pixels):
+        """This function contains data structure initializations."""
+        lane_pixels, ratio = self.SWS.find(lane_pixels)
+        self.lane_pixels = lane_pixels
+        # print(ratio)
+        self.detected = Averager(self.buffer_length, datatype=True, with_value=True)
+        self.detected.put(ratio > self.detect_ratio_threshold)
+        # First update of polynomials
+        fit = fit_poly2nd(lane_pixels)
+        self.fit = Averager(self.buffer_length, fit, with_value=True)
+        # Calculate radius
+        radius = measure_curve_radius(fit, self.y_size,
+                                      self.scale_x, self.scale_y)
+        self.__radius_of_curvature = Averager(self.buffer_length, radius,
+                                              with_value=True)
+        # Calculate lane line base
+        base_x = self.calculate_line_base(fit, y_eval=self.y_size)
+        self.line_base_pos = Averager(self.buffer_length, base_x,
+                                      with_value=True)
+
+        # Initialize sanity check results
+        self.sanity_check_results = Averager(self.buffer_length, datatype=True, with_value=True)
 
     @staticmethod
     def calculate_line_base(fit, y_eval):
@@ -252,58 +443,157 @@ class LaneLine:
         base = fit[0] * y_eval ** 2 + fit[1] * y_eval + fit[2]
         return base
 
+    @property
+    def curve_radius(self):
+        return self.__radius_of_curvature.ema()
+
+    @property
+    def mean_squared_error(self):
+        return self.__mse.get(0)
+
     def update(self, lane_pixels):
         """Update lane information according to lane pixel image.
         :param lane_pixels: binary image of all left and right lane pixels.
         """
         if self.SWS is None:
-            self.__initialize_SWS(lane_pixels, x_margin=20, y_size=self.y_size,
-                                  w_height=30, nwindows=15)
+            self.__initialize_SWS(lane_pixels)
             # In first update we need to setup data structures
             self.__first_update(lane_pixels)
         else:
             lane_pixels, ratio = self.SWS.find(lane_pixels)
             self.lane_pixels = lane_pixels
-            self.detected = ratio > self.detect_ratio_threshold
-            # First update of polynomials
+            self.detected.put(ratio > self.detect_ratio_threshold)
+            # Update polynomials
             fit = fit_poly2nd(lane_pixels)
-            self.fit.put(fit)
-            # Calculate radius
-            radius = measure_curve_radius(fit, self.y_size,
-                                          self.scale_x, self.scale_y)
-            self.radius_of_curvature.put(radius)
-            # Calculate lane line base
-            base_x = self.calculate_line_base(fit, y_eval=self.y_size)
-            self.line_base_pos.put(base_x)
+            if self.sanity_check(fit):
+                self.fit.put(fit)
+                # Calculate radius
+                radius = measure_curve_radius(fit, self.y_size,
+                                              self.scale_x, self.scale_y)
+                self.__radius_of_curvature.put(radius)
+                # Calculate lane line base
+                base_x = self.calculate_line_base(fit, y_eval=self.y_size)
+                self.line_base_pos.put(base_x)
+            else:
+                print("LaneLine.update(): Sanity check failed! mse: {}".format(self.mean_squared_error))
+            scr = self.sanity_check_results.get_all()
+            if  not scr.any():
+                self.__initialize_SWS(lane_pixels)
+                self.__first_update(lane_pixels)
+                print("reinitialize")
 
+    def draw_lane_fit(self, image_size, y_range, color=(255, 0, 0), averaged=True, thickness=1):
+        """
+        
+        :param image_size: Size of the image (height, width) 
+        :param y_range: Y-range of plot (start, stop), start is inclusive ,stop is exclusive
+        :param color: BGR 0...255
+        :param averaged: If True then use exponontial moving average, otherwise use latest
+        :return:
+        
+        >>> self.draw_lane_fit(shape, y_range=(200,500), color=(255, 255, 255), averaged=True, thickness=5)
+        """
+        # Create y_values for given y-ragen
+        ploty = np.arange(y_range[0], y_range[1],dtype=np.int32)
 
-    def __initialize_SWS(self, lane_pixels, x_margin, y_size, w_height, nwindows):
-        """Initializes sliding window search."""
-        left_x, right_x = find_initial_lane_centers(lane_pixels)
-        if self.side == LaneLine.LEFT:
-            x_start = left_x
+        # Select averaged or latest value
+        fit = None
+        if averaged:
+            fit = self.fit.ema()
         else:
-            x_start = right_x
-        self.SWS = SlidingWindowSearch(x_start, x_margin, y_size, w_height, nwindows)
+            fit = self.fit.get(0)
+        plotx = (fit[0] * ploty ** 2 + fit[1] * ploty + fit[2]).astype(dtype=np.int32)
 
-    def __first_update(self, lane_pixels):
-        """This function contains data structure initializations."""
-        lane_pixels, ratio = self.SWS.find(lane_pixels)
-        self.lane_pixels = lane_pixels
-        # print(ratio)
-        self.detected = ratio > self.detect_ratio_threshold
-        # First update of polynomials
-        fit = fit_poly2nd(lane_pixels)
-        self.fit = Averager(self.buffer_length, fit, with_value=True)
-        # Calculate radius
-        radius = measure_curve_radius(fit, self.y_size,
-                                      self.scale_x, self.scale_y)
-        self.radius_of_curvature = Averager(self.buffer_length, radius,
-                                            with_value=True)
-        # Calculate lane line base
-        base_x = self.calculate_line_base(fit, y_eval=self.y_size)
-        self.line_base_pos = Averager(self.buffer_length, base_x,
-                                      with_value=True)
+        # Create an image to draw on and an image to show the selection window
+        img_shape = (image_size[0], image_size[1], 3)
+        out_img = np.zeros(img_shape, dtype=np.uint8)
+
+        # Generate a polygon to illustrate the lane area
+        # And recast the x and y points into usable format for cv2.fillPoly()
+        pts = np.array([np.transpose(np.vstack([plotx, ploty]))])
+        # Points need to be reshaped to be suitable for polylines
+        pts = pts.reshape((-1,1,2))
+        # Draw curve
+        cv2.polylines(out_img, [pts], isClosed=False, color=color, thickness=thickness)
+        return out_img
+
+    def draw_lane_pixels(self, image_size, color=(255, 0, 0)):
+        """
+        Draw pixels which are detected to be belonging to lane.
+        :param image_size: (height, width)
+        :param color: Color BGR 0..255 
+        :return: bgr uint8 image
+        
+        >>> self.draw_lane_pixels((512, 256), (255,0,0))
+        """
+        # This will effective get rid of 3rd dimension
+        shape = (image_size[0], image_size[1])
+        r_pixels = np.zeros(shape, dtype=np.uint8)
+        g_pixels = np.zeros(shape, dtype=np.uint8)
+        b_pixels = np.zeros(shape, dtype=np.uint8)
+
+        # Set color
+        b_pixels[self.lane_pixels != 0] = color[0]
+        g_pixels[self.lane_pixels != 0] = color[1]
+        r_pixels[self.lane_pixels != 0] = color[2]
+
+        # stack colorplanes to BGR image
+        bgr_pixels = np.dstack((b_pixels, g_pixels, r_pixels))
+
+        return bgr_pixels
+
+    def overlay_lane_fit(self, image, y_range=(200,500), color=(255, 255, 255), averaged=True, thickness=5, alpha=0.8):
+        """
+        Overlay detected lane pixels on given image.
+        :param image: uint8 bgr image
+        :param color: Color BGR 0..255
+        :param alpha: opacity of lane pixels 0..1
+        :return: 
+        """
+        bgr_pixels = self.draw_lane_fit(image.shape, y_range=y_range, color=color,
+                                        averaged=averaged, thickness=thickness)
+
+        # Combine lane pixels to input image
+        result = cv2.addWeighted(src1=image, alpha=1, src2=bgr_pixels,
+                                 beta=alpha, gamma=0)
+        return result
+
+    def overlay_lane_pixels(self, image, color=(255, 0, 0), alpha=1):
+        """
+        Overlay detected lane pixels on given image.
+        :param image: uint8 bgr image
+        :param color: Color BGR 0..255
+        :param alpha: opacity of lane pixels 0..1
+        :return: 
+        """
+        bgr_pixels = self.draw_lane_pixels(image.shape, color)
+
+        # Combine lane pixels to input image
+        result = cv2.addWeighted(src1=image, alpha=1, src2=bgr_pixels,
+                                 beta=alpha, gamma=0)
+        return result
+
+    def sanity_check(self, fit):
+        """Make a sanity check of the fitted polynomials.
+        Compare to existing data and allow small difference to ema.
+        :param fit: polynomial coefficients.
+        :return: True when fit is ok."""
+        ema = self.fit.ema()
+        mse = poly_2nd_mse(ema, fit, y_range=(200, 512))
+        ok = mse < self.mse_reject_limit
+        self.__mse.put(mse)
+
+        self.sanity_check_results.put(ok)
+        scr = self.sanity_check_results.get_all()[0:5]
+
+        # If 5 consecutive sanity checks fail set error flag
+        if np.count_nonzero(scr) == 0:
+            self.error = True
+        else:
+            self.error = False
+        return ok
+
+
 
 class Averager:
     """Averager for scalars and 1D arrays"""
@@ -373,8 +663,8 @@ class SearchWindow:
     >>> sw_next = sw.next_rectangle()
     >>> sw.rect
     """
-    def __init__(self, rect, threshold=0.04, noise_limit=0.3, sigma=5,
-                 direction=DIR_DESCENDING, rcoef=1):
+    def __init__(self, rect, threshold=0.04, noise_limit=0.3,
+                 direction=DIR_DESCENDING, rcoef=1.):
         """
         This is a search window.
         
@@ -383,20 +673,48 @@ class SearchWindow:
         :param noise_limit: Ratio of pixels which will lead to rejection
         :param sigma: OBSOLETE! 
         """
+
         self.rect = rect
         self.threshold=threshold
         self.noise_limit = noise_limit
-        self.sigma = sigma
+
         self.dir = direction
         self.rcoef = rcoef
 
-        # Placeholders for measured center values
-        self.center_local = None
-        self.center_global = None
+        # Sigma of gaussian distribution
+        # Gaussian kernel for outlier removal
+        self.sigma = None
+        self.kernel = None
+        self.set_gaussian_kernel(5)
 
+        # Keep distance, how many pixels from found center we'll keep
+        self.keep_distance = 5
+
+        # Avererager buffer length
+        self.buffer_length = 10
+
+        # Placeholders for measured center values
+        center_local = np.abs(((rect[0][0] - rect[1][0]) / 2.))
+        self.measured_center_local = Averager(self.buffer_length,
+                                              center_local,
+                                              with_value=True)
+
+        center_global = np.abs(((rect[0][0] + rect[1][0]) / 2.))
+        self.measured_center_global = Averager(self.buffer_length,
+                                               center_global,
+                                               with_value=True)
+
+        #print("Initial values:", self.measured_center_local.ema(), self.measured_center_global.ema())
         # Place holder for statistics
         self.detected = None
         self.noise_error = None
+
+        # Information about the parent window x position
+        self.parent_x = None
+        # Maximum distance to parent window center, This keeps windows from traveling
+        self.parent_x_max_dist = 2
+        # Maximum move distance during repositioning
+        self.max_move = 2
 
     @staticmethod
     def build_rectangle(x_center, x_margin, y_start, w_height, dir):
@@ -432,6 +750,39 @@ class SearchWindow:
         rect = ((x_left, y_top), (x_right, y_bot))
         return rect
 
+    def measure_local_peak(self, sliced_area):
+        # print("Shape of slice = ", sliced_area.shape)
+        # Histogram peak is the center
+        histogram = np.sum(sliced_area, axis=0)
+        # Use gaussian kernel to remove outliers.
+        histogram = histogram * self.kernel
+        measured_center = np.argmax(histogram)
+
+        #print("histogram max: {:.3f}".format(histogram.max()))
+
+        if histogram.max() > 2:
+            self.measured_center_local.put(measured_center)
+
+
+        #return self.measured_center_local.ema()
+        #print("measured center: {:.3f} ema: {:.3f}".format(measured_center, self.measured_center_local.ema()))
+        return self.measured_center_local.ema()
+
+    def set_gaussian_kernel(self, sigma):
+        """
+        Following discussion shows how to create 2D gaussian kernel, We are using 1D
+        http://stackoverflow.com/questions/29731726/how-to-calculate-a-gaussian-kernel-matrix-efficiently-in-numpy
+        :param sigma: Sigma of gaussian distribution
+        
+        """
+        length = np.abs(self.rect[0][0] - self.rect[1][0])
+        #print("length:", length)
+        self.sigma = sigma
+        ax = np.arange(-length // 2 + 1., length // 2 + 1.)
+        self.kernel = np.exp(-(ax ** 2) / (2. * sigma ** 2))
+        #print("set gaussian kern:", self.kernel)
+
+
     def search(self, binary_image):
         """
         This method search the lane center location from the given image.
@@ -440,10 +791,7 @@ class SearchWindow:
         """
         x = self.rect  # short for the rectangle
         sliced_area = binary_image[x[0][1]:x[1][1], x[0][0]:x[1][0]].copy()
-
-        # Histogram peak is the center
-        histogram = np.sum(sliced_area, axis=0)
-        center = np.argmax(histogram)
+        #print("sliced_area shape", sliced_area.shape)
 
         # These are needed to define whether line is found and whether we are
         # dealing with excessive noise
@@ -454,38 +802,120 @@ class SearchWindow:
         ratio = area_hot / area_total
         found = ratio > self.threshold
         noise_error = ratio > self.noise_limit
-
-        # Leave pixels only on sigma distance from the center line
-        #sliced_area[:, 0:int(center) - self.sigma] = 0
-        #sliced_area[:, int(center) + self.sigma:sliced_area.shape[1]] = 0
-
-        # Create return image (As default initialized to zeros)
-        result_img = np.zeros_like(binary_image)
-        center_global = None
-        if found:
-            # Convert local window coordinates to global image coordinates
-            center_global = center + x[0][0]
-            result_img[x[0][1]:x[1][1], x[0][0]:x[1][0]] = sliced_area
-        else:
-            center = None
-        # Save information to instance
-        self.center_local = center
-        self.center_global = center_global
-
         self.detected = found
         self.noise_error = noise_error
 
-        return result_img, center_global, found, noise_error
+        center = self.measure_local_peak(sliced_area)
+
+        # Leave pixels only on keep distance from the center line
+        sliced_area[:, 0:int(center) - self.keep_distance] = 0
+        sliced_area[:, int(center) + self.keep_distance:sliced_area.shape[1]] = 0
+
+        # Create return image (As default initialized to zeros)
+        result_img = np.zeros_like(binary_image)
+
+        if found:
+            # Convert local window coordinates to global image coordinates
+            center_global = center + x[0][0]
+            self.center_global_last_found = center_global
+            result_img[x[0][1]:x[1][1], x[0][0]:x[1][0]] = sliced_area
+
+            # Save information to instance
+            self.measured_center_local.put(center)
+            self.measured_center_global.put(center_global)
+        else:
+            # Place "supporting" pixel to
+            # rect ((x1, y1), (x2, y2))
+            center_y = int(np.abs((self.rect[0][1] + self.rect[1][1]) / 2))
+            x = int(self.rect[0][0]+self.measured_center_local.ema())
+            #print(center_y, x)
+            result_img[center_y][x] = 1
+            pass
+
+
+        return result_img, self.measured_center_global.ema(), found, noise_error
+
+    def set_window_center_x(self, x):
+        """Sets a new center position."""
+        half_w = int(self.search_rect_width() / 2)
+
+        r = self.rect
+        # Here it is very important to ensure that window width stays same
+        old_width = np.abs(r[0][0]- r[1][0])
+        new_x1 = int(x - half_w)
+        new_x2 = new_x1 + old_width
+        new_rect = ((new_x1, r[0][1]),(new_x2, r[1][1]))
+
+        # NOTE! Seems that search windows are more stable without below code.
+        #center_local = np.abs(((self.rect[0][0] - self.rect[1][0]) / 2.))
+        #self.measured_center_local.put(center_local)
+        #self.measured_center_local = Averager(self.buffer_length,
+        #                                      center_local,
+        #                                      with_value=True)
+
+        #center_global = np.abs(((self.rect[0][0] + self.rect[1][0]) / 2.))
+        #self.measured_center_global.put(center_global)
+        #self.measured_center_global = Averager(self.buffer_length,
+        #                                       center_global,
+        #                                       with_value=True)
+        #print("new rect:", new_rect)
+        self.rect = new_rect
+
+    def set_parent_center_x(self, x):
+        """Sets information about the parent window center"""
+        print(x)
+        self.parent_x = x
+
+    def get_window_center_x(self):
+        """
+        Returns X-center of search rectangle in global image coordinates.
+        :return: X-center of search rectangle 
+        """
+        c = int(self.rect[0][0] + self.rect[1][0]) / 2
+        return c
+
+    def get_window_width(self):
+        """Returns search window width"""
+        c = int(np.abs(self.rect[0][0] - self.rect[1][0])) / 2
+        return c
+
+    def reposition(self):
+        """
+        Repositions search rectangle to a center which have been measured during search.
+        Repositioning aggressiveness is controlled by self.rcoeff parameter.
+        :return: 
+        """
+        c1 = self.get_window_center_x()
+        c2 = self.measured_center_global.ema()
+
+        diff = c1 - c2
+        # Limit maximum move
+        diff = np.clip(diff, -self.max_move, self.max_move)
+        new_center = c1 - diff
+        # Limit maximum distance from parent window. I.e window below this window
+        if self.parent_x:
+                new_center = np.clip(new_center,
+                                     self.parent_x - self.parent_x_max_dist,
+                                     self.parent_x + self.parent_x_max_dist)
+        self.set_window_center_x(new_center)
+
+    def search_rect_width(self):
+        """
+        
+        :return: Search rectangle width in pixels 
+        """
+        w = np.abs(self.rect[0][0] - self.rect[1][0])
+        return w
 
     def next_rectangle(self):
         """Builds next search rectangle. Rectangle can be used to create new 
         instance of searchwindow."""
-        if self.center_global:
+        if self.measured_center_global:
             # If We have found lane center
             # Calculate horizontal center of this search window
             rect_hcenter = (self.rect[1][0] + self.rect[0][0]) / 2
             # Calculate how much new rectangle need to be shifted
-            hshift =  int((self.center_global - rect_hcenter) * self.rcoef)
+            hshift =  int((self.measured_center_global.get(0) - rect_hcenter) * self.rcoef)
             # Calculate left and right of next rectangle
             x_left, x_right = (self.rect[0][0] + hshift), (self.rect[1][0] + hshift)
         else:
@@ -511,7 +941,7 @@ class SearchWindow:
     def next_search_window(self):
         """Builds a next search window above or below this window."""
         rect = self.next_rectangle()
-        sw = SearchWindow(rect,self.threshold, self.noise_limit, self.sigma,
+        sw = SearchWindow(rect,self.threshold, self.noise_limit,
                           self.dir, self.rcoef)
         return sw
 
@@ -558,27 +988,71 @@ class SlidingWindowSearch:
         self.rcoeff = 1
         self.result_img = None
 
-        self.search_w = []  # Container for search windows
+        self.search_w = None  # Container for search windows
 
     def find(self, binary_image):
         """
         Do sliding window search for lane line on given image.
         :param binary_image: Binary image of warped scene. 
+        :return: Uint8 binary image of most probable lane pixels."""
+        if self.search_w is None:
+            return self.__first_find(binary_image)
+        else:
+            result_img = np.zeros_like(binary_image, dtype=np.uint8)
+            current_parent_x = self.search_w[0].measured_center_global.ema()
+            for x in self.search_w:
+                # result_img, center_global, found, noise_error
+                res = x.search(binary_image)
+                x.parent_x = current_parent_x
+                x.reposition()
+                # Update with current value for next loop iteration
+                current_parent_x = x.measured_center_global.ema()
+                # It's better that resulting binary image will be uint8 type
+                result_img += res[0].astype(dtype=np.uint8)
+
+            # Save result_img for further visualizations
+            self.result_img = result_img
+
+            found_count = 0
+            for sw in self.search_w:
+                found_count += sw.detected
+            found_ratio = found_count / float(len(self.search_w))
+
+            return result_img, found_ratio
+
+    def __first_find(self, binary_image):
+        """
+        Do sliding window search for lane line on given image.
+        :param binary_image: Binary image of warped scene. 
         :return: Uint8 binary image of most probable lane pixels.
         """
+        self.search_w = []
         rect = SearchWindow.build_rectangle(self.x_center, self.x_margin,
                                             self.y_start, self.w_height,
                                             self.dir)
         result_img = np.zeros_like(binary_image, dtype=np.uint8)
-        sw = SearchWindow(rect, threshold=0.02, noise_limit=0.5, sigma=15,
-                          direction=self.dir, rcoef=1)
+        sw = SearchWindow(rect, threshold=0.03, noise_limit=0.5,
+                          direction=self.dir, rcoef=0.2)
         for x in range(self.nwindows):
             self.search_w.append(sw)
             # result_img, center_global, found, noise_error
+            # Modify keep distance for the first search
+            keep_dist = sw.keep_distance
+            sw.keep_distance *= 3
+            # Modify max move for first search
+            max_move = sw.max_move
+            sw.max_move *= 5
+            # Searh lane pixels
             res = sw.search(binary_image)
+            sw.reposition()
+            # Set original keep distance
+            sw.keep_distance = keep_dist
+            # Set original max move
+            sw.max_move = max_move
             # It's better that resulting binary image will be uint8 type
             result_img += res[0].astype(dtype=np.uint8)
             sw = sw.next_search_window()
+
         # Save result_img for further visualizations
         self.result_img = result_img
 
@@ -592,11 +1066,11 @@ class SlidingWindowSearch:
     def overlay_rectangles(self, image, color=(255,0,0), thickness=3, alpha=1):
         """
         Overlay search rectangles on given image.
-        :param image: 3 channel image
+        :param image: uint8 BGR, 3 channel image
         :return: original + overlay
         """
         rectangles = self.draw_rectangles(img_size=(image.shape[1],image.shape[0]),
-                                          thickness=thickness)
+                                          thickness=thickness, color=color)
         result = cv2.addWeighted(image, 1, rectangles, alpha, 0)
         return result
 
@@ -618,156 +1092,6 @@ class SlidingWindowSearch:
             pt1, pt2 = w.rect
             cv2.rectangle(empty_img, pt1, pt2, color, thickness)
         return empty_img
-
-
-
-
-
-
-
-
-
-class SlidingWindow:
-    def __init__(self, nwindows=9, margin=100, minpix=50, image_size=(256, 512)):
-
-        self.left_x_base = None         # Base of left lane
-        self.right_x_base = None        # Base of right lane
-        self.nwindows = nwindows        # Number of windows in y direction
-        self.windows_left_rects = []    # Container for windows rectangles
-        self.windows_right_rects = []   # Container for windows rectangles
-        self.window_height = None       # Height of window
-        self.left_fit = None
-        self.right_fit = None
-        self.margin = margin            # the width of the windows +/- margin
-        self.minpix = minpix            # minimum number of pixels found to recenter window
-
-        # Create empty lists to receive left and right lane pixel indices
-        self.left_lane_inds = []
-        self.right_lane_inds = []
-
-        self.nonzero = None
-        self.nonzerox = None
-        self.nonzeroy = None
-
-        # Set image size which is used in visualization
-        self.image_size = image_size
-
-
-    @staticmethod
-    def find_initial_lane_centers(binary_image):
-        """
-        Finds initial left and right lane centers from given image.
-        :param binary_image: Warped binary image of lane pixels.
-        :return: left_base, right_base
-        """
-        # Assuming you have created a warped binary image called "binary_warped"
-        # Take a histogram of the bottom half of the image
-        histogram = np.sum(binary_image[binary_image.shape[0] // 2:, :],
-                           axis=0)
-
-        # Find the peak of the left and right halves of the histogram
-        # These will be the starting point for the left and right lines
-        midpoint = np.int(histogram.shape[0] / 2)
-        left_x_base = np.argmax(histogram[:midpoint])
-        right_x_base = np.argmax(histogram[midpoint:]) + midpoint
-        return left_x_base, right_x_base
-
-    def find(self, binary_warped):
-        # TODO: Try to find out how to split this method into manageable pieces
-        lx, rx = self.find_initial_lane_centers(binary_warped)
-        left_x_current, right_x_current = lx, rx
-        self.left_x_base = lx
-        self.right_x_base = rx
-
-        # Set height of windows
-        self.window_height = np.int(binary_warped.shape[0] / self.nwindows)
-        # Identify the x and y positions of all nonzero pixels in the image
-        self.nonzero = binary_warped.nonzero()
-        self.nonzeroy = np.array(self.nonzero[0])
-        self.nonzerox = np.array(self.nonzero[1])
-        # Empty list to store search windows rectangles
-        self.windows_left_rects = []
-        self.windows_right_rects = []
-
-        # Step through the windows one by one
-        for window_idx in range(self.nwindows):
-            # Identify window boundaries in x and y (and right and left)
-            win_y_low = binary_warped.shape[0] - (window_idx+1)*self.window_height
-            win_y_high = binary_warped.shape[0] - window_idx*self.window_height
-            win_xleft_low = left_x_current - self.margin
-            win_xleft_high = left_x_current + self.margin
-            win_xright_low = right_x_current - self.margin
-            win_xright_high = right_x_current + self.margin
-            self.windows_left_rects.append(((win_xleft_low,win_y_low),
-                                            (win_xleft_high,win_y_high)))
-            self.windows_right_rects.append(((win_xright_low,win_y_low),
-                                             (win_xright_high,win_y_high)))
-
-            # Identify the nonzero pixels in x and y within the window
-            good_left_inds = ((self.nonzeroy >= win_y_low) & (self.nonzeroy < win_y_high)
-                              & (self.nonzerox >= win_xleft_low) & (self.nonzerox < win_xleft_high)).nonzero()[0]
-            good_right_inds = ((self.nonzeroy >= win_y_low) & (self.nonzeroy < win_y_high)
-                               & (self.nonzerox >= win_xright_low) & (self.nonzerox < win_xright_high)).nonzero()[0]
-            # Append these indices to the lists
-            self.left_lane_inds.append(good_left_inds)
-            self.right_lane_inds.append(good_right_inds)
-            # If you found > minpix pixels, recenter next window on their mean position
-            if len(good_left_inds) > self.minpix:
-                left_x_current = np.int(np.mean(self.nonzerox[good_left_inds]))
-            if len(good_right_inds) > self.minpix:
-                right_x_current = np.int(np.mean(self.nonzerox[good_right_inds]))
-
-        # Concatenate the arrays of indices
-        left_lane_inds = np.concatenate(self.left_lane_inds)
-        right_lane_inds = np.concatenate(self.right_lane_inds)
-
-        self.left_fit = fit_indices(left_lane_inds, self.nonzerox, self.nonzeroy)
-        self.right_fit = fit_indices(right_lane_inds, self.nonzerox, self.nonzeroy)
-
-    def visualize_rectangles(self, image, left_color=(1), right_color=(1),
-                             thickness=2):
-        """
-        Visualizes rectangles on given image.
-        :param image: Should be same size than used to find lanes
-        :param left_color: Defines the color of left lane rectangles. Depending of image type you can use eg. (255,0,0) or (1) or (255)
-        :param right_color: Defines the color of right lane rectangles. Depending of image type you can use eg. (255,0,0) or (1) or (255)
-        :param thickness: rectangle thickness in pixels
-        :return: 
-        """
-        # Concatenate rectangle lists and draw those on image
-        for pt1, pt2 in self.windows_left_rects:
-            cv2.rectangle(image, pt1, pt2, left_color, thickness)
-        for pt1, pt2 in self.windows_right_rects:
-            cv2.rectangle(image, pt1, pt2, right_color, thickness)
-        return image
-
-    def visualize_lane(self):
-        """Returns BGR image to where lane is visualized."""
-        # Generate x and y values for plotting
-        ploty = np.linspace(0, self.image_size[1] - 1,
-                            self.image_size[1])
-        left_fitx = self.left_fit[0] * ploty ** 2 + self.left_fit[
-                                                        1] * ploty + \
-                    self.left_fit[2]
-        right_fitx = self.right_fit[0] * ploty ** 2 + self.right_fit[
-                                                          1] * ploty + \
-                     self.right_fit[2]
-
-        # Create an image to draw on and an image to show the selection window
-        img_shape = (self.image_size[1], self.image_size[0], 3)
-        out_img = np.zeros(img_shape, dtype=np.uint8)
-
-        # Generate a polygon to illustrate the lane area
-        # And recast the x and y points into usable format for cv2.fillPoly()
-        left_line = np.array(
-            [np.transpose(np.vstack([left_fitx, ploty]))])
-        right_line = np.array([np.flipud(
-            np.transpose(np.vstack([right_fitx, ploty])))])
-        lane_pts = np.hstack((left_line, right_line))
-
-        # Draw the lane onto the warped blank image
-        cv2.fillPoly(out_img, np.int_([lane_pts]), (0, 255, 0))
-        return out_img
 
 
 class CurveSearch:
@@ -889,14 +1213,14 @@ class CurveSearch:
         return out_img
 
 
-def find_lane_pixels(cplanes, pfilter, gamma=0.8):
+def find_lane_pixels(cplanes, pfilter, gamma_w=0.8, gamma_y=0.8):
     """Finds lane pixels from given cplanes tensor."""
     pyellow = pfilter *  colors.normalize_plane(find_yellow_lane_pixel_props(cplanes))
     pwhite = pfilter * colors.normalize_plane(find_white_lane_pixel_props(cplanes))
-
+    cv2.imshow('white', pwhite)
 
     binary_output = np.zeros_like(cplanes[:,:,0])
-    binary_output[(pyellow >= gamma) | (pwhite >= gamma)] = 1
+    binary_output[(pyellow >= gamma_y) | (pwhite >= gamma_w)] = 1
     return binary_output, pyellow, pwhite
 
 def find_yellow_lane_pixel_props(cplanes):
@@ -924,8 +1248,10 @@ def find_white_lane_pixel_props(cplanes):
     # Use HLS-L and RGB-R lanes for white detection
     white_hls_l = cplanes[:, :, 4]
     rgb_r = colors.normalize_plane(cplanes[:, :, 0])
+    white_lab_l = colors.white_centric_lab_l(cplanes[:, :, 6])
+
     # Calculate "propability of white"
-    white = white_hls_l * rgb_r
+    white = white_hls_l * rgb_r * white_lab_l
     # Image needs smoothing before sobel filter
     white = cv2.GaussianBlur(white, ksize=(5, 5), sigmaX=3, sigmaY=3)
     # Find vertical which are in going up-down direction
@@ -965,7 +1291,7 @@ def find_white_lane_pixel_props(cplanes):
                                    sigmaY=3)
     # Clip negative gradients and compensate with lightness and red information
     # in order to hide other than white lanes
-    filter = np.clip(filter, 0, 1) * white_hls_l * rgb_r
+    filter = np.clip(filter, 0, 1) * white
     return filter
 
 
@@ -1022,29 +1348,44 @@ if __name__ == "__main__":
         return thresholded
 
     # Test with single image
-    if True:
+    if False:
         # Instantiate camera, load calib params and undistort
         cam = Cam('../project_video.mp4')
         #cam.load_params("../udacity_project_calibration.npy")
         undistorted = cam.undistort(image)
         lf = LaneFinder(cam)
+        print(undistorted.shape)
+        print(cam.warp_mtx)
         warped = cam.apply_pipeline(image)
+        print(warped.shape)
         img = lf.apply(warped)
+        unwarped = cam.warp_inverse(img)
+        print(unwarped.shape)
+        uncropped = cam.crop_inverse(unwarped)
 
         #cspaces = colors.bgr_uint8_2_cpaces_float32(warped)
         #print(cspaces.shape, cspaces.dtype)
         #p = load_propability_filter()
         #img, py ,pw = find_lane_pixels(cspaces, p, gamma=0.4)
-        show_image(img)
+        show_image(uncropped)
 
     # Test with video
-    if False:
+    if True:
         cam = Cam('../project_video.mp4')
+        #cam = Cam('../challenge_video.mp4')
         lf = LaneFinder(cam)
         for frame in cam:
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             pipelined = lf.apply(frame)
-            cv2.imshow('video', pipelined)
+            lane = lf.draw_lane(color=(0,255,0), y_range=(100,500))
+
+            img = pipelined
+            img = cv2.addWeighted(img, 1, lane, 0.5, 0)
+            #unwarped = cam.warp_inverse(pipelined)
+            #print(unwarped.shape)
+            #img = cam.apply_pipeline_inverse(img)
+            #uncropped = cam.crop_inverse(unwarped)
+            cv2.imshow('video', img)
             cv2.waitKey(1)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break

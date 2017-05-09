@@ -114,6 +114,12 @@ def white_centric_lab_a(lab_a, gamma=1):
     return white
 
 
+def white_centric_lab_l(lab_l):
+    clipped = np.clip(lab_l, 70, 95)
+    white = normalize_plane( clipped)
+    return white
+
+
 def white_color_plane(cplanes):
     """This function returns a white centric color plane. i.e. amount of whiteness.
     :param cplanes: Color planes tensor
@@ -130,5 +136,6 @@ def white_color_plane(cplanes):
     lab_a_norm = normalize_plane(
         white_centric_lab_a(cplanes[:, :, 7], gamma=1))
     lab_a = white_centric_lab_a(cplanes[:, :, 7], gamma=1)
+    lab_l = white_centric_lab_l(cplanes[:, :, 6])
 
     return normalize_plane(hls_l * rgb_r)

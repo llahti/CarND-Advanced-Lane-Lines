@@ -133,7 +133,6 @@ def measure_curve_radius(fit, y_eval, scale_x=1, scale_y=1):
     """
     a = fit[0]
     b = fit[1]
-    c = fit[2]
 
     # normal polynomial: x=                  a * (y**2) +           b *y+c,
     # Scaled to meters:  x= mx / (my ** 2) * a * (y**2) + (mx/my) * b *y+c
@@ -241,28 +240,26 @@ class LaneFinder:
         cplanes = colors.bgr_uint8_2_cpaces_float32(blurred)
         # Find most propable lane pixels
         lanes, py, pw = find_lane_pixels(cplanes, self.pfilter,
-                                                gamma_y=0.2, gamma_w=0.2)
+                                                gamma_y=0.2, gamma_w=0.1)
 
         # Update lane line locations
         for lane in self.lanes:
             lane.update(lanes)
-
-        result = bgr_uint8_image
-        for lane in self.lanes:
-            result = lane.overlay_lane_fit(result, y_range=(200, 500),
-                                           color=(255, 0, 0), averaged=True, thickness=5)
-            result = lane.SWS.overlay_rectangles(result, color=(127,127,0), thickness=2, alpha=1)
-            result = lane.overlay_lane_pixels(result, color=(0, 0, 255) )
-
         self.sanity_check()
 
-        # Calculate curvature and offset
-        lane_offset = measure_lane_center(self.lanes[0].fit.ema(),
-                                          self.lanes[0].fit.ema(),
-                                          y_eval=510, scale_x=self.camera.scale_x)
-        self._center_offset.put(lane_offset)
-        lane_curvature = (self.lanes[0].curve_radius + self.lanes[0].curve_radius) / 2.
-        self._curve_rad.put(lane_curvature)
+        # Calculate offset
+        lane_center = measure_lane_center(self.lanes[0].fit.ema(),
+                                          self.lanes[1].fit.ema(),
+                                          y_eval=510)
+        image_center = self.camera.warp_dst_img_size[0] / 2
+        lane_offset_m = (image_center - lane_center) * self.camera.scale_x
+        self._center_offset.put(lane_offset_m)
+
+        # Calculate curvature
+        lane_curvature = (self.lanes[0].curve_radius + self.lanes[1].curve_radius) / 2.
+        # For some reason we need this correction factor in order to get curve
+        # radius from ~300 --> 1km on known curve
+        self._curve_rad.put(lane_curvature*3)
 
 
         # Save data
@@ -273,16 +270,7 @@ class LaneFinder:
         self.data['img_propability_white'] = pw
         self.data['img_input'] = bgr_uint8_image
 
-
-        non_warped_lane = self.camera.warp_inverse(result)
-
-        # result = cv2.addWeighted(image, 1, non_warped_lane, 0.3, 0)
-        # cv2.putText(result, "Curve Radius: {:.0f}m".format(curve_rad), (50, 50),
-        #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
-        # cv2.putText(result, "Off Center:   {:.2f}m".format(offset), (50, 100),
-        #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
-
-        return result
+        return self
 
     def draw_lane(self, color=(0, 255, 0), y_range=(200,500)):
         """Returns BGR image to where lane is visualized. Visialization is 
@@ -317,6 +305,14 @@ class LaneFinder:
         # Draw the lane onto the warped blank image
         cv2.fillPoly(out_img, np.int_([lane_pts]), color)
         return out_img
+
+    @property
+    def lane_line_left(self):
+        return self.lanes[0]
+
+    @property
+    def lane_line_right(self):
+        return self.lanes[1]
 
     def update_error(self, is_error):
         """Handels updating errors"""
@@ -541,6 +537,10 @@ class LaneLine:
         bgr_pixels = np.dstack((b_pixels, g_pixels, r_pixels))
 
         return bgr_pixels
+
+    def draw_search_area(self, image_size, color=(255, 0, 0), thickness=3):
+        img = self.SWS.draw_rectangles(image_size, color=color, thickness=thickness)
+        return img
 
     def overlay_lane_fit(self, image, y_range=(200,500), color=(255, 255, 255), averaged=True, thickness=5, alpha=0.8):
         """
@@ -1217,7 +1217,6 @@ def find_lane_pixels(cplanes, pfilter, gamma_w=0.8, gamma_y=0.8):
     """Finds lane pixels from given cplanes tensor."""
     pyellow = pfilter *  colors.normalize_plane(find_yellow_lane_pixel_props(cplanes))
     pwhite = pfilter * colors.normalize_plane(find_white_lane_pixel_props(cplanes))
-    cv2.imshow('white', pwhite)
 
     binary_output = np.zeros_like(cplanes[:,:,0])
     binary_output[(pyellow >= gamma_y) | (pwhite >= gamma_w)] = 1
@@ -1373,19 +1372,38 @@ if __name__ == "__main__":
     if True:
         cam = Cam('../project_video.mp4')
         #cam = Cam('../challenge_video.mp4')
+        warped_img_size=(256,512)
         lf = LaneFinder(cam)
         for frame in cam:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            pipelined = lf.apply(frame)
+            # Run frame through lane finder
+            lf.apply(frame)
+            # Annotate lane
             lane = lf.draw_lane(color=(0,255,0), y_range=(100,500))
+            unwarped_lane = cam.apply_pipeline_inverse(lane)
+            unwarped_annotated_lane = cv2.addWeighted(cam.latest_undistorted, 1, unwarped_lane, 0.5, 0)
+            # Use this image to mark search areas and lane pixels
+            warped_input = lf.data['img_input']
+            # Annotate search area and lane pixels
+            warped_sa_l = lf.lane_line_left.draw_search_area(warped_img_size)
+            warped_pixels_left = lf.lane_line_left.draw_lane_pixels((512,256), color=(0,0,255))
+            warped_sa_r = lf.lane_line_right.draw_search_area(warped_img_size)
+            warped_pixels_right = lf.lane_line_right.draw_lane_pixels((512,256), color=(0, 0, 255))
+            warped_search_area = cv2.addWeighted(warped_input, 1, warped_sa_l, 0.5, 0)
+            warped_search_area = cv2.addWeighted(warped_search_area, 1, warped_sa_r,0.5, 0)
+            warped_search_area = cv2.addWeighted(warped_search_area, 1,
+                                                 warped_pixels_left, 1, 0)
+            warped_search_area = cv2.addWeighted(warped_search_area, 1,
+                                                 warped_pixels_right, 1, 0)
 
-            img = pipelined
-            img = cv2.addWeighted(img, 1, lane, 0.5, 0)
-            #unwarped = cam.warp_inverse(pipelined)
-            #print(unwarped.shape)
-            #img = cam.apply_pipeline_inverse(img)
-            #uncropped = cam.crop_inverse(unwarped)
-            cv2.imshow('video', img)
+            # Add lane curvature and offset readings
+            # cv2.putText(result, "Curve Radius: {:.0f}m".format(curve_rad), (50, 50),
+            #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+            # cv2.putText(result, "Off Center:   {:.2f}m".format(offset), (50, 100),
+            #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+
+            #lane_uncropped = cam.crop_inverse(lane)
+            cv2.imshow('annotated_lane', unwarped_annotated_lane)
+            cv2.imshow('warped_search_Area', warped_search_area)
             cv2.waitKey(1)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break

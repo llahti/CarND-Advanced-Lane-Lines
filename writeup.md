@@ -44,7 +44,10 @@ The goals / steps of this project are the following:
 [image21]: ./illustrations/curve_lanes_fitted.jpg "Curve Search: Lanes Fitted."
 [//]: # (Image References - Augmented image)
 [image22]: ./illustrations/visualized_lane.jpg "Augmented lane on image"
-
+[//]: # (Image References - Propabilities)
+[image23]: ./illustrations/color_white_from_lab_l.jpg "White from Lab-L"
+[image24]: ./illustrations/color_white_propability.jpg "Propability of white lane pixels"
+[image25]: ./illustrations/propability_threshold.jpg "Probability Threshold"
 
 [//]: # (Article References)
 [1]: http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#drawchessboardcorners
@@ -53,22 +56,18 @@ The goals / steps of this project are the following:
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 
-Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
+This document is a writeup / readme document for **Udacity Advanced Lane Finding** project submission.
+In this document i will address rubic points as defined in [Rubric](https://review.udacity.com/#!/rubrics/571/view)
+Note that this document also contains additional explanations.
 
-### Writeup / README
-
-#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
-
-You're reading it!
-
-### Video Analysis
+## Video Analysis
 
 Before going deeper into the technical detail of the project i will first analyze 
 given three videos to get general understanding of the difficulty of project.
 
 In this section i give brief summary and analysis of three given videos.
 
-#### 1. 'project_video.mp4'
+### 1. 'project_video.mp4'
 
 This video is mandatory to meet project specification.
 
@@ -83,7 +82,7 @@ difficulties at least right on the border of dark and bright portion of the road
 ![Change from dark road to bright road.][image02]
 
 
-#### 2. 'challenge_video.mp4'
+### 2. 'challenge_video.mp4'
 
 This video is optional challenge. In this video lane lines have lower contrast to
 background. Special challenge on this video is that there is sharp edge caused by 
@@ -98,7 +97,7 @@ to image brightness.
 ![Shadow caused by overhead bridge][image04]
 
 
-#### 3. 'harder_challenge_video.mp4'
+### 3. 'harder_challenge_video.mp4'
 
 This video is optional challenge and it is the hard one. Reason is that lane lines
 are not visible in many locations because those either occluded or on over exposed 
@@ -109,8 +108,9 @@ portion of the image.
 ![White line is occluded by dead leaves][image09]
 ![Yellow line occluded by motorcycle][image10]
 
+# Methods 
 
-### Camera Calibration
+## Camera Calibration
 
 Camera calibration plays important part in computer vision as it allows us to 
 correct distortion caused by the vision system for instance distortion caused 
@@ -128,7 +128,7 @@ grid, but there are circular grids as well.
 In order to get good results nearly 20 images should be used to generate camera 
 matrix and coefficients.
 
-All my camera calibration code is located in `Camera/CameraBase.py` file.
+All my camera calibration code is located in `Camera/Base.py` file.
 
 ### Preparations
 
@@ -174,7 +174,7 @@ points in the image as pixels.
 
 
 
-#### Finding corners
+### Finding corners
 
 In OpenCV we can use function [findChessboardCorners](http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#findchessboardcorners) 
 to find the inner corners of the the calibration grid. I'm also using [cornerSubPix](http://docs.opencv.org/2.4.8/modules/imgproc/doc/feature_detection.html?highlight=cornersubpix#cv2.cornerSubPix)
@@ -214,7 +214,61 @@ From below image you can see how undistort corrects distorted images.
 ![alt text][image13]
 
 
-### Color Threshold and Gradients Threshold
+## Propabilities
+
+I'm using bit different method to find yellow and white lane lines. Idea is bit like 
+in a weak learner that you can build a good estimation from simple learners.
+In finding lane lines we are using several cues (Color planes and gradients) to 
+build up propability of lane pixel.
+
+### Probability of White Line 
+
+White line pixel propability calculations are implemented in 
+`LaneFinder.finder.py` in `find_white_lane_pixel_props()` function. 
+
+Calculations can be then further divided into normalization and using 
+sub-propabilities from HLS-L and LAb-L colorspaces.
+
+- HLS-L Color plane is used as is.
+- RGB-R color plane is normalized by using min-max normalization.
+- LAB-L is further processed by clipping values between 70..95 and then min-max normalizing it to 0...1
+
+Below is propability from Lab-L color plane 
+![alt text][image23]
+
+By multiplying sub propabilities it is possible to improve detection of white pixels.
+Below image illustrates how situation changes after we use cues also from other 
+sources. Such as RGB-R. HLS-L and gradients
+![alt text][image24]
+
+
+### Probability of Yellow Line 
+
+White line pixel propability calculations are implemented in 
+`LaneFinder.finder.py` in `find_yellow_lane_pixel_props()` function.
+ 
+Yellow lane has so strong cues in diffirent color planes so that we don't need 
+to use gradient information.
+
+Following color planes are used and multiplied to produce probability of yellow. 
+- hls_h: values near yellow color (value ~40 ) for more information please see `LaneFinder.colors.py / yellow_centric_hls_h()` 
+- lab_b normalized to 0..1
+- luv_v normalized to 0..1
+
+### Propability Threshold
+
+As we're now focusing on propabilities we don't need to threshold colors individually. 
+We only need to threshold yellow and white propability. This is done in 
+`LaneFinder.finder.find_lane_pixels(cplanes, pfilter, gamma_w=0.8, gamma_y=0.8):`
+It takes cplanes-tensor and run it through yellow and white propability 
+functions and then threshold by `gamme_w ` and `gamma_y ` values.
+
+Propability threshold produces following kind of binary image.
+![alt text][image25]
+
+## Color Threshold and Gradients Threshold
+
+NOTE! Color threshold and gradient threshold is for earlier version of this project, but it is good to keep here for informative purpose.
 
 Threshold code is located in `LaneFinder/threshold.py` File. It is the used in 
 pipeline code which is located in `apply()` method in `LaneFinder/pipeline.py`
@@ -227,7 +281,7 @@ when you combine simple methods you are able to extract information more reliabl
 For human being lane line detection is trivial task. You just find lines which 
 divide lanes and are white or yellow in color. 
 
-#### Color Threshold
+### Color Threshold
 
 Color threshold class is in `LaneFinder/threshold.py` and starting from line 5.
 
@@ -269,7 +323,7 @@ is similar to lane lines are visible.
 ![alt text][image16]
 
 
-### Perspective Transform
+## Perspective Transform
 
 Perspective transform class (`Perspective`) is in `LaneFinder/transformation.py`
 
@@ -317,62 +371,62 @@ binary image.
 
 ![alt text][image20]
 
-### Curve Search
 
-"Curve Search" is in `LaneFinder/finder.py` starting from line 159.
-
-When we know initial lane curves we can begin to use more optimized searching 
-method. In this "curve" search we can search lane lines by using the curves 
-we already know.
-
-Such like in below image we know the curves and then we can find lane pixels in 
-vicinity of those curves. Green area is the search area.
-
-![alt text][image21]
-
-
-### Calculating Curvature & Offset
+## Calculating Curvature & Offset
 
 Code is located in `LaneFinder/pipeline.py`.
 
 Both of these calculations are done in LaneFinder.pipeline. Curvature is 
-calculated in method `measure_curvature(self, left_fit, right_fit)` which 
-input parameters are both lanes 2nd order polynomial. Output is mean of left 
+calculated in method `measure_curve_radius(fit, y_eval, scale_x=1, scale_y=1)` 
+in which input parameters are both lanes 2nd order polynomial. Output is mean of left 
 and right lane curvature in meters.
+
+I'm using following code to calculate curve radius.
+```python
+a = fit[0]
+    b = fit[1]
+
+    # normal polynomial: x=                  a * (y**2) +           b *y+c,
+    # Scaled to meters:  x= mx / (my ** 2) * a * (y**2) + (mx/my) * b *y+c
+    a1 = (scale_x / (scale_y ** 2))
+    b1 = (scale_x / scale_y)
+
+    # Calculate curve radius with scaled coefficients
+    radius = ((1 + (2 * a1 * a * y_eval * + (b1 * b)) ** 2) ** 1.5) / np.absolute(2 * a1 * a)
+```
+But it seems that in my code this is not producing correct estimate. 
+Calculated is perhaps 3 times smaller than estimated 1km radius of curve in video.
+This mismatch is compensated in `finder.py` on line 268 where radius is multiplied by three.
  
-Offset is calculated in method  `measure_offset(self, left_fit, right_fit)` which 
-also takes both lane's 2nd order polynomial as a parameter and returns the 
-distance from lane center.
+ 
+In order to calculate car center location i'm first calculating center of lane 
+in pixels space by using `measure_lane_center()` function in `finder.py`. After that 
+we need subtract it from image center and multiply by scaling factor.
+That is done in `finder.py` on lines 257-262.
 
 
-### Pipeline (single images)
+## Pipeline (single images)
 
 Above I described single elements in my pipeline and here is short summary.
 Main portion of pipeline is located in `PipeLine_LanePixels.apply()`
 
 1. Undistort
+1.1 Crop
 2. Warp
 3. Convert uint8 to float32 image
-4. Convert BGR to HLS colorspace 
-5. Threshold 
-5.1 Gaussian Blur
-5.2 Hue Threshold
-5.3 Lightness Threshold
-5.4 Saturation Threshold
-5.5 Red Threshold
-5.6 Gradient magnitude and dir on lightness channel
-5.7 Gradient magnitude and dir on saturation channel
-5.8 Sum thresholds and threshold once more
-6. Find lane pixels - LaneFinder/finder.py
-6.1 First shot with sliding window search
-6.2 Consequent frames with curve search
+4. Convert BGR to cpaces (RGB, HLS, LAB and LUV colorspaces)
+5. Probabilities
+5.1 Calculate white and yellow probabilities
+5.2 Threshold to get most probable lane pixels
+6. Find lane pixels by using sliding window search
 7. Visualize lanes on warped empty image
-8. Measure curvature and offset - Pipeline_LanePixels.measure_curvature and offset
-9. Unwarp visualized lane and combine with original image - Pipeline_LanePixels.apply()
-10. Add measurements to image - Pipeline_LanePixels.apply()
+8. Measure curvature and offset 
+9. Unwarp visualized lane and combine with original image 
+10. Add measurements to image 
 
 After applying pipeline to image we got following result.
 ![alt text][image22]
+
 
 ### Pipeline (video)
 
@@ -380,17 +434,16 @@ Here's a [link to my video result](./augmented_project_video.mp4)
 
 It is performing quite ok. 
 I would like to make few improvements such as.
-- improve robustness of the pipeline as currently there are no any methods 
-  recover from lost lines.
-- Weighted running average filter for lane detection to improve stability
+- improve robustness of the pipeline. There are few moments when leading search windows won't pick-up lanes fast enough
+- Curve radius calculation need to be improved to produce correct results out of the box
 - Lane pixel detection needs also improvements to make it work on different roads.
-
-
 
 ### Discussion
 
 This project was interesting and i learned a lot about camera calibration and 
-perspective transformations.
+perspective transformations. And perhaps the biggest learning came from using 
+numpy and openCV on real project and after this project i feel much more 
+comfortable with those
 
 There are still improvements needed. Particularly on lane detection and 
 how to make detection stable.
@@ -398,45 +451,3 @@ how to make detection stable.
 Also performance needs improvements. I have been trying pipeline with different size
 warped image sizes and when images got bigger i.e. 512x1024 performance begin 
 to degrade seemingly.
-
-
-## Output Images
-
-Here is summarize all generated output images
-
-### Finding corners from calibration grid
-[Calibration Grid Corners](./output_images/00.jpg)
-
-### Undistorted Image
-
-[Undistorted grid and example image](./output_images/01.jpg)
-
-### Warped image
-
-[Unwarped and warped image with warping points](./output_images/02.jpg)
-
-### Threshold Pipeline
-#### Hue Channel
-[Thresholded Hue](./output_images/threshold_0.jpg)
-#### Saturation Channel
-[Thresholded Saturation](./output_images/threshold_color_1.jpg)
-#### Lightness Channel
-[Thresholded Lightness](./output_images/threshold_color_2.jpg)
-#### Red Channel
-[Thresholded Red](./output_images/threshold_color_3.jpg)
-#### Summed Color Thresholds
-[Threshold Colors Summed](./output_images/threshold_color_summed.jpg)
-#### Final Threshold of Colors
-[Threshold Colors](./output_images/threshold_color.jpg)
-#### Gradient Magnitude and Direction on Lightness Channel
-[Gradient Magnitude and Direction on Lightness Channel](./output_images/threshold_gradient_0.jpg)
-#### Gradient Magnitude and Direction on Saturation Channel
-[Gradient Magnitude and Direction on Saturation Channel](./output_images/threshold_gradient_1.jpg)
-#### Summed Gradient Thresholds
-[Summed Gradient Thresholds](./output_images/threshold_gradient_summed.jpg)
-#### Final Threshold of Gradients
-[Threshold Gradients](./output_images/threshold_gradient.jpg)
-#### Final Binary Threshold
-[Final Threshold](./output_images/threshold_final.jpg)
-#### Final Result
-[Visualized Lane with measurements](./output_images/visualized_lane.jpg)

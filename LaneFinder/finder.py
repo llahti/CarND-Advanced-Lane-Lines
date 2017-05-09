@@ -187,6 +187,9 @@ class LaneFinder:
         self.y_size = camera.warp_dst_img_size[1]
         self.camera = camera
 
+        # Warped image size
+        self.__warped_img_size = (camera.warp_dst_img_size[1], camera.warp_dst_img_size[0])
+
         self.__init_search_windows()
 
         # Error counter
@@ -240,7 +243,7 @@ class LaneFinder:
         cplanes = colors.bgr_uint8_2_cpaces_float32(blurred)
         # Find most propable lane pixels
         lanes, py, pw = find_lane_pixels(cplanes, self.pfilter,
-                                                gamma_y=0.2, gamma_w=0.1)
+                                                gamma_y=0.25, gamma_w=0.15)
 
         # Update lane line locations
         for lane in self.lanes:
@@ -352,6 +355,41 @@ class LaneFinder:
             self.update_error(True)
         else:
             self.update_error(False)
+
+    def visualize_finder(self):
+        # Use this image to mark search areas and lane pixels
+        warped_input = self.data['img_input']
+        # Annotate lane fit
+        warped_input = self.lane_line_left.overlay_lane_fit(warped_input, y_range=(105,500),
+                                                             color=(0,255,0), averaged=True,
+                                                             thickness=10, alpha=0.3)
+        warped_input = self.lane_line_right.overlay_lane_fit(warped_input,
+                                                             y_range=(105, 500),
+                                                             color=(0, 255, 0),
+                                                             averaged=True,
+                                                             thickness=10,
+                                                             alpha=0.3)
+
+        # Annotate search area and lane pixels
+        warped_sa_l = self.lane_line_left.draw_search_area(self.__warped_img_size)
+        warped_pixels_left = self.lane_line_left.draw_lane_pixels(self.__warped_img_size,
+                                                                color=(
+                                                                0, 0, 255))
+        warped_sa_r = self.lane_line_right.draw_search_area(self.__warped_img_size)
+        warped_pixels_right = self.lane_line_right.draw_lane_pixels(self.__warped_img_size,
+                                                                  color=(
+                                                                  0, 0, 255))
+
+
+        warped_search_area = cv2.addWeighted(warped_input, 1, warped_sa_l, 0.5,
+                                             0)
+        warped_search_area = cv2.addWeighted(warped_search_area, 1, warped_sa_r,
+                                             0.5, 0)
+        warped_search_area = cv2.addWeighted(warped_search_area, 1,
+                                             warped_pixels_left, 1, 0)
+        warped_search_area = cv2.addWeighted(warped_search_area, 1,
+                                             warped_pixels_right, 1, 0)
+        return warped_search_area
 
 class LaneLine:
     # https://classroom.udacity.com/nanodegrees/nd013/parts/fbf77062-5703-404e-b60c-95b78b2f3f9e/modules/2b62a1c3-e151-4a0e-b6b6-e424fa46ceab/lessons/40ec78ee-fb7c-4b53-94a8-028c5c60b858/concepts/7ee45090-7366-424b-885b-e5d38210958f
@@ -1083,7 +1121,7 @@ class SlidingWindowSearch:
         :return: uint8 BGR image with 3 channels
         """
         # Empty image to draw rectangles
-        shape = (img_size[1],img_size[0], 3)
+        shape = (img_size[0],img_size[1], 3)
 
         empty_img = np.zeros(shape, dtype=np.uint8)
 
@@ -1381,19 +1419,10 @@ if __name__ == "__main__":
             lane = lf.draw_lane(color=(0,255,0), y_range=(100,500))
             unwarped_lane = cam.apply_pipeline_inverse(lane)
             unwarped_annotated_lane = cv2.addWeighted(cam.latest_undistorted, 1, unwarped_lane, 0.5, 0)
-            # Use this image to mark search areas and lane pixels
-            warped_input = lf.data['img_input']
-            # Annotate search area and lane pixels
-            warped_sa_l = lf.lane_line_left.draw_search_area(warped_img_size)
-            warped_pixels_left = lf.lane_line_left.draw_lane_pixels((512,256), color=(0,0,255))
-            warped_sa_r = lf.lane_line_right.draw_search_area(warped_img_size)
-            warped_pixels_right = lf.lane_line_right.draw_lane_pixels((512,256), color=(0, 0, 255))
-            warped_search_area = cv2.addWeighted(warped_input, 1, warped_sa_l, 0.5, 0)
-            warped_search_area = cv2.addWeighted(warped_search_area, 1, warped_sa_r,0.5, 0)
-            warped_search_area = cv2.addWeighted(warped_search_area, 1,
-                                                 warped_pixels_left, 1, 0)
-            warped_search_area = cv2.addWeighted(warped_search_area, 1,
-                                                 warped_pixels_right, 1, 0)
+            unwarped_annotated_lane[:522,:266]=0
+
+            warped_search_area = lf.visualize_finder()
+            unwarped_annotated_lane[:512, :256]=warped_search_area
 
             # Add lane curvature and offset readings
             # cv2.putText(result, "Curve Radius: {:.0f}m".format(curve_rad), (50, 50),
@@ -1403,7 +1432,7 @@ if __name__ == "__main__":
 
             #lane_uncropped = cam.crop_inverse(lane)
             cv2.imshow('annotated_lane', unwarped_annotated_lane)
-            cv2.imshow('warped_search_Area', warped_search_area)
+            #cv2.imshow('warped_search_Area', warped_search_area)
             cv2.waitKey(1)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break

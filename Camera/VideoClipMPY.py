@@ -1,5 +1,6 @@
 from Camera.Base import Base
 from moviepy.editor import VideoFileClip
+import cv2
 
 
 class VideoClipMPY(Base):
@@ -37,7 +38,9 @@ class VideoClipMPY(Base):
         """Return next frame from video clip."""
         next_frame = next(self.clip_iterator)
         self.latest_raw = next_frame
-        self.latest_pipelined = self.apply_pipeline(next_frame)
+        frame = cv2.cvtColor(next_frame.copy(), cv2.COLOR_RGB2BGR)
+        self.latest_distorted = frame
+        self.latest_pipelined = self.apply_pipeline(frame)
         return self.latest_pipelined
 
 if __name__ == "__main__":

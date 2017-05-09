@@ -65,6 +65,7 @@ class Base:
         return self
 
     def __next__(self):
+        """Should return image in in BGR colorspace"""
         assert True, "Base class does not implement this method."
         return None
 
@@ -187,7 +188,8 @@ class Base:
         :param image: 
         :return: Undistorted image 
         """
-        return cv2.undistort(image, self.mtx, self.dist, None, None)
+        self.latest_undistorted = cv2.undistort(image, self.mtx, self.dist, None, None)
+        return self.latest_undistorted
 
     def crop(self, image):
         """Crops image and returns cropped version of it."""

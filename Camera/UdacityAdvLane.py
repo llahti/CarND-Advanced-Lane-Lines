@@ -58,10 +58,9 @@ class UdacityAdvLane(VideoClipMPY):
         self.load_params(self.calib_param_file)
 
         # Define x and y scale to real world dimensions [m/px]
-        # lane width = 54px / 3.7m
-        # dashed line length = 38px / 3m
         self.scale_x = 3.7 / 70
         self.scale_y = 3. / 58
+
 
         # Define image size
         self.image_size = (1280, 720)

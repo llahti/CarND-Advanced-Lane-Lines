@@ -1,8 +1,9 @@
-"""Lane finder"""
+"""Lane finder
+TODO: fix doc tests
+TODO: Remove unsused code"""
 
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
 from LaneFinder import colors
 import LaneFinder as _LaneFinder
 
@@ -13,8 +14,9 @@ DIR_DESCENDING = -1  # Descending index
 
 def fit_poly2nd(binary_image):
     """This function fits curve on given image. Precondition is that image 
-    is prefiltered and curve very well visible.
+    is pre-filtered and curve very well visible.
     All non-zero pixels are fitted.
+    
     :param binary_image: Binary image which have curve
     :return: Polynomial coefficients of curve a,b,c"""
     nonzero = binary_image.nonzero()
@@ -87,7 +89,7 @@ def poly2xy_pairs(fit, y_range):
 
 
 def fit_indices(lane_inds, nonzerox, nonzeroy):
-    # OBSOLETE
+    # OBSOLETE (CurveSearch needs this)
     # Extract left and right line pixel positions
     x = nonzerox[lane_inds]
     y = nonzeroy[lane_inds]
@@ -100,6 +102,7 @@ def fit_indices(lane_inds, nonzerox, nonzeroy):
 def find_initial_lane_centers(binary_image):
     """
     Finds initial left and right lane centers from given image.
+    
     :param binary_image: Warped binary image of lane pixels.
     :return: left_base, right_base
     """
@@ -212,8 +215,8 @@ class LaneFinder:
         self.filter_length = 20
 
         # Radius of curve and offset
-        self._curve_rad = Averager(self.filter_length, float(), with_value=False)
-        self._center_offset = Averager(self.filter_length, float(), with_value=False)
+        self._curve_rad = Averager(self.filter_length, float(0), with_value=True)
+        self._center_offset = Averager(self.filter_length, float(0), with_value=True)
 
     def __init_search_windows(self):
         """Use this method to initialize sliding window search"""
@@ -1031,6 +1034,7 @@ class SlidingWindowSearch:
     def find(self, binary_image):
         """
         Do sliding window search for lane line on given image.
+        
         :param binary_image: Binary image of warped scene. 
         :return: Uint8 binary image of most probable lane pixels."""
         if self.search_w is None:
@@ -1112,7 +1116,6 @@ class SlidingWindowSearch:
         result = cv2.addWeighted(image, 1, rectangles, alpha, 0)
         return result
 
-
     def draw_rectangles(self, img_size=(256, 512), color=(255,0,0), thickness=3):
         """
         Returns visualized rectangles
@@ -1133,6 +1136,7 @@ class SlidingWindowSearch:
 
 
 class CurveSearch:
+    """This class is not used at the moment and it needs improvements to be stable."""
     def __init__(self, left_fit, right_fit, margin=30, image_size=(256, 512)):
         """
         This lane finding algorith search lane within vicinity of existing lane curve given by left and right fits.
@@ -1252,13 +1256,21 @@ class CurveSearch:
 
 
 def find_lane_pixels(cplanes, pfilter, gamma_w=0.8, gamma_y=0.8):
-    """Finds lane pixels from given cplanes tensor."""
+    """
+    Finds lane pixels from given cplanes tensor.
+    :param cplanes: color planes tensor
+    :param pfilter: propability filter which can be used to filter out areas outside of interest
+    :param gamma_w: threshold for white
+    :param gamma_y: threshold for yellow
+    :return: binary image of most probable lane pixels
+    """
     pyellow = pfilter *  colors.normalize_plane(find_yellow_lane_pixel_props(cplanes))
     pwhite = pfilter * colors.normalize_plane(find_white_lane_pixel_props(cplanes))
 
     binary_output = np.zeros_like(cplanes[:,:,0])
     binary_output[(pyellow >= gamma_y) | (pwhite >= gamma_w)] = 1
     return binary_output, pyellow, pwhite
+
 
 def find_yellow_lane_pixel_props(cplanes):
     """
@@ -1360,6 +1372,7 @@ def load_binary_test_image():
 if __name__ == "__main__":
     from LaneFinder.threshold import Color
     from Camera import UdacityAdvLane as Cam
+    import matplotlib.pyplot as plt
 
     # Load test image #
     #image = cv2.imread(
@@ -1419,16 +1432,19 @@ if __name__ == "__main__":
             lane = lf.draw_lane(color=(0,255,0), y_range=(100,500))
             unwarped_lane = cam.apply_pipeline_inverse(lane)
             unwarped_annotated_lane = cv2.addWeighted(cam.latest_undistorted, 1, unwarped_lane, 0.5, 0)
-            unwarped_annotated_lane[:522,:266]=0
 
+            # Insert small warped image onto big image
             warped_search_area = lf.visualize_finder()
-            unwarped_annotated_lane[:512, :256]=warped_search_area
+            unwarped_annotated_lane[:522, :266] = 0  # Cut black hole on left top corner
+            unwarped_annotated_lane[:512, :256] = warped_search_area
 
             # Add lane curvature and offset readings
-            # cv2.putText(result, "Curve Radius: {:.0f}m".format(curve_rad), (50, 50),
-            #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
-            # cv2.putText(result, "Off Center:   {:.2f}m".format(offset), (50, 100),
-            #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+            curve_rad = lf.curve_radius
+            offset = lf.lane_offset
+            cv2.putText(unwarped_annotated_lane, "Curve Radius: {:.0f}m".format(curve_rad), (300, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+            cv2.putText(unwarped_annotated_lane, "Off Center:   {:.2f}m".format(offset), (300, 100),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
 
             #lane_uncropped = cam.crop_inverse(lane)
             cv2.imshow('annotated_lane', unwarped_annotated_lane)
@@ -1436,4 +1452,6 @@ if __name__ == "__main__":
             cv2.waitKey(1)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
-
+            plt.imshow(lf.data['img_lane_pixels'])
+            plt.show()
+            break

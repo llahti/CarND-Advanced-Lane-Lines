@@ -1,5 +1,6 @@
 """LaneFinder"""
-from . import threshold
-from . import transformations
-from . import pipeline
+from . import colors
 from . import finder
+from . import threshold
+
+from .utils import get_module_path

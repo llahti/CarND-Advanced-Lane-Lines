@@ -50,7 +50,8 @@ class UdacityAdvLane(VideoClipMPY):
                                              do_crop=True, do_warp=True,
                                              crop_rect=crop_rect,
                                              warp_mtx=(src, dst),
-                                             warp_src_img_size=original_image_size,
+                                             #warp_src_img_size=original_image_size,
+                                             warp_src_img_size=self.cropped_image_size,
                                              warp_dst_img_size=warped_image_size)
         # Load calibration parameters
         self.calib_param_file = Camera.__path__[0] + '/udacity_project_calibration.npy'
@@ -61,3 +62,6 @@ class UdacityAdvLane(VideoClipMPY):
         # dashed line length = 38px / 3m
         self.scale_x = 3.7 / 70
         self.scale_y = 3. / 58
+
+        # Define image size
+        self.image_size = (1280, 720)

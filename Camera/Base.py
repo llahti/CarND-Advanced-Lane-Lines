@@ -33,6 +33,9 @@ class Base:
         self.do_warp = do_warp
         # Define pipeline
         self.pipeline = self._create_pipeline(do_undistort, do_crop, do_warp)
+        # Define inverse pipeline (Useful to get images which are pipelined
+        # back to original shape)
+        self.pipeline_inverse = self._create_pipeline_inverse(do_undistort, do_crop, do_warp)
         # Define needed parameters for transformations
         self.crop_rect = crop_rect
         self.warp_mtx = warp_mtx
@@ -54,6 +57,9 @@ class Base:
         self.latest_raw = None
         self.latest_pipelined = None
 
+        # Define image size (width, height)
+        self.image_size = None
+
     def __iter__(self):
         assert True, "Base class does not implement this method."
         return self
@@ -73,10 +79,30 @@ class Base:
             pl.append(self.warp)
         return pl
 
+    def _create_pipeline_inverse(self, do_distort, do_inv_crop, do_inv_warp):
+        """Creates a inverse pipeline"""
+        pl = []
+
+        # Inverse pipeline steps have to be in inverse order compared to pipeline
+        if do_inv_warp:
+            pl.append(self.warp_inverse)
+        if do_inv_crop:
+            pl.append(self.crop_inverse)
+        # if do_distort:
+        #    pl.append(self.distort)
+        return pl
+
     def apply_pipeline(self, image):
         """This function applies pipeline to image. Pipeline is a collection of 
         image editing functions defined in self.pipeline."""
         for f in self.pipeline:
+            image = f(image)
+        return image
+
+    def apply_pipeline_inverse(self, image):
+        """This function applies inverse pipeline to image. Pipeline is a collection of 
+        image editing functions defined in self.pipeline_inverse."""
+        for f in self.pipeline_inverse:
             image = f(image)
         return image
 
@@ -96,7 +122,7 @@ class Base:
         :param pattern: specifies the pattern of how to find calibration images. eg. './camera_cal/*.jpg'
         :param nxy: tuple (nx, ny) number of inner corners in calibration grid
         :param verbose: 0 no output, 1 show tqdm progress bar, 2 Show calibration images 
-        :return: 
+        :return: reprojection error value
         """
         # termination criteria
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -173,6 +199,25 @@ class Base:
         # NOTE: numpy slicing [y: y + h, x: x + w]
         image = image[y1:y2, x1:x2]
         return image
+
+    def crop_inverse(self, cropped_image):
+        """Puts cropped image back to the uncropped size"""
+        shape = list(cropped_image.shape)
+        dimensions = len(shape)
+        assert (dimensions == 2) | (
+        dimensions == 3), "Image dimensions can only be 2 or 3"
+        # Set shape to be the raw image size
+        shape[0] = self.image_size[1]
+        shape[1] = self.image_size[0]
+
+        dst = np.zeros(shape, dtype=cropped_image.dtype)
+        x1 = self.crop_rect[0][0]
+        y1 = self.crop_rect[0][1]
+        x2 = self.crop_rect[1][0]
+        y2 = self.crop_rect[1][1]
+        # Insert cropped image into new image
+        dst[y1:y2, x1:x2, 0:shape[2]+1] = cropped_image
+        return dst
 
     def save_params(self, filename):
         """Save calibration parameters to file.

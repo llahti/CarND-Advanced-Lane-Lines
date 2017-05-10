@@ -285,8 +285,8 @@ Propability threshold produces following kind of binary image.
 ## Color Threshold and Gradients Threshold
 
 > NOTE! Color threshold and gradient threshold are for earlier version of this 
-project. In this version we i'm not basically thresholding colors or gradients 
-alone but it is good to keep here for informative purpose.
+project. In this version i'm not basically  colors or gradients thresholds 
+alone but it is good to keep this here for informative purpose.
 
 Threshold code is located in `LaneFinder/threshold.py` File. It is the used in 
 pipeline code which is located in `apply()` method in `LaneFinder/pipeline.py`
@@ -369,12 +369,16 @@ centric view.
 
 ### Sliding Window Search
 
-Sliding Window search is in `LaneFinder/finder.py` starting from line 18.
-
 After we have nicely warped binary image and all the lane pixels found i begin 
 to locate lane lines. First step on finding a lane line is to locate it's base 
 which is nearest to the car. This is done by taking histogram of bottom half of 
 the image. In histogram we can see 2 distinct peaks which are the lane lines. 
+
+Sliding Window search is in `LaneFinder/finder.py`. Search consists of 3 different classes.
+- SearchWindow: Implements the search window and methods of finding lane pixels within the window
+- SlidingWindowSearch: Lower level class for handling the generation and positioning of search windows
+- LaneLine: Abstration of a lane line.
+
 
 ![alt text][image18]
 
@@ -489,7 +493,7 @@ Above I described single elements in my pipeline and here is summary the pipelin
 #### Visualize lane
  ![alt text][image37] 
 
-####. Add measurements to image
+##### Add measurements to image
  ![alt text][image38]
 
 #### Finale Result

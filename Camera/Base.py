@@ -237,7 +237,8 @@ class Base:
 
     def warp(self, image):
         """Warps image."""
-        return self.transformation.apply(image)
+        warped = self.transformation.apply(image)
+        return warped
 
     def warp_inverse(self, image):
         """Inverse warp"""

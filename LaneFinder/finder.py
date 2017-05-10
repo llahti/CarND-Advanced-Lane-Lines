@@ -239,11 +239,12 @@ class LaneFinder:
         """Applies pipeline to image.
         :param bgr_uint8_image: Image have to be uint8 BGR color image."""
 
-
         # Blur image to remove noise
         blurred = cv2.GaussianBlur(bgr_uint8_image, ksize=(9, 9), sigmaX=1, sigmaY=9)
+
         # Convert to colorspaces object
         cplanes = colors.bgr_uint8_2_cpaces_float32(blurred)
+
         # Find most propable lane pixels
         lanes, py, pw = find_lane_pixels(cplanes, self.pfilter,
                                                 gamma_y=0.25, gamma_w=0.15)
@@ -259,13 +260,13 @@ class LaneFinder:
                                           y_eval=510)
         image_center = self.camera.warp_dst_img_size[0] / 2
         lane_offset_m = (image_center - lane_center) * self.camera.scale_x
+        # Store value in filter
         self._center_offset.put(lane_offset_m)
 
-        # Calculate curvature
+        # Calculate curvature by averaging left and right lane curve radius
         lane_curvature = (self.lanes[0].curve_radius + self.lanes[1].curve_radius) / 2.
-        # For some reason we need this correction factor in order to get curve
-        # radius from ~300 --> 1km on known curve
-        self._curve_rad.put(lane_curvature*3)
+        # Store value in filter
+        self._curve_rad.put(lane_curvature)
 
 
         # Save data
@@ -1258,15 +1259,32 @@ class CurveSearch:
 def find_lane_pixels(cplanes, pfilter, gamma_w=0.8, gamma_y=0.8):
     """
     Finds lane pixels from given cplanes tensor.
+    
     :param cplanes: color planes tensor
-    :param pfilter: propability filter which can be used to filter out areas outside of interest
+    :param pfilter: probability filter which is be used to filter out areas outside of interest
     :param gamma_w: threshold for white
     :param gamma_y: threshold for yellow
     :return: binary image of most probable lane pixels
+    
+    RGB_R, RGB_G, RGB_B
+    HLS_H, HLS_L, HLS_S
+    Lab_L, Lab_a, Lab_b,
+    Luv_L, Luv_u, Luv_v
     """
-    pyellow = pfilter *  colors.normalize_plane(find_yellow_lane_pixel_props(cplanes))
-    pwhite = pfilter * colors.normalize_plane(find_white_lane_pixel_props(cplanes))
+    # Filter out areas out of interest
+    cplanes[:, :, 0] *= pfilter  # RGR-R
+    cplanes[:, :, 1] *= pfilter  # RGB-G
+    cplanes[:, :, 2] *= pfilter  # RGB-B
+    cplanes[:, :, 4] *= pfilter  # HLS-L
+    cplanes[:, :, 5] *= pfilter  # HLS-S
+    cplanes[:, :, 6] *= pfilter  # LAB-L
+    cplanes[:, :, 9] *= pfilter  # LUV-L
 
+    # Normalized plane to get better distribution to propabilities
+    pyellow = colors.normalize_plane(find_yellow_lane_pixel_props(cplanes))
+    pwhite = colors.normalize_plane(find_white_lane_pixel_props(cplanes))
+
+    # Threshold to get binary output
     binary_output = np.zeros_like(cplanes[:,:,0])
     binary_output[(pyellow >= gamma_y) | (pwhite >= gamma_w)] = 1
     return binary_output, pyellow, pwhite
@@ -1448,10 +1466,7 @@ if __name__ == "__main__":
 
             #lane_uncropped = cam.crop_inverse(lane)
             cv2.imshow('annotated_lane', unwarped_annotated_lane)
-            #cv2.imshow('warped_search_Area', warped_search_area)
+
             cv2.waitKey(1)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
-            plt.imshow(lf.data['img_lane_pixels'])
-            plt.show()
-            break

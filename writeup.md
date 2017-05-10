@@ -389,6 +389,26 @@ binary image.
 
 ![alt text][image20]
 
+#### Stability
+Stability of lane finding algorith is guaranteed by following way.
+
+##### Search window
+In search window i implemented following methods to improve stability
+1. Window maximum movement per iteration is limited
+2. Window maximum horizontal distance to it's 'parent' is limited
+3. Noise is rejected by favoring pixels near the center of window
+4. Window center position is averaged by using exponential running average filter
+5. Window center position constitutes one pixel to found lane pixels. This helps when there are not many lane pixels found in a frame. 
+
+##### LaneLine Search (Laneline & SlidingWindowSearch Classes)
+1. Search windows are repositioned after each frame
+2. If lane line differs much from the running exponential average then it is rejected (`LaneLine.sanity_check()`)
+
+##### LaneFinder Class
+ Error checking code in `LaneFinder.sanity_check()`
+ 1. Check that lanes are withing correct distance from each other. This checks mean and maximum error.
+ 2. If too many consecutive errors are found then reset Sliding Window Search (`LaneFinder.update_error()`)
+
 
 ## Calculating Curvature & Offset
 

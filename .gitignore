@@ -1,2 +1,4 @@
-./idea/
-__pycache__
+.idea/
+./LaneFinder/__pycache__
+./Camera/__pycache__
+./output_images/.DS_Store

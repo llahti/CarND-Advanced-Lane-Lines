@@ -48,6 +48,22 @@ The goals / steps of this project are the following:
 [image23]: ./illustrations/color_white_from_lab_l.jpg "White from Lab-L"
 [image24]: ./illustrations/color_white_propability.jpg "Propability of white lane pixels"
 [image25]: ./illustrations/propability_threshold.jpg "Probability Threshold"
+[//]: # (Image References - Pipeline with single image)
+[image26]: ./output_images/00_original.jpg "Original image from Camera device"
+[image27]: ./output_images/01_undistorted.jpg "Undistorted image"
+[image28]: ./output_images/02_cropped.jpg "Cropped image"
+[image29]: ./output_images/03_warped.jpg "Warped image"
+[image30]: ./output_images/04_blurred.jpg "Blurred"
+[image31]: ./output_images/05_cpaces.jpg "Unmodified cpaces tensor"
+[image32]: ./output_images/06_cpaces_filtered.jpg "filtered cpaces tensor"
+[image33]: ./output_images/07_probability_of_yellow.jpg "Probability of yellow lane line"
+[image34]: ./output_images/08_probability_of_white.jpg "Probability of white lane line"
+[image35]: ./output_images/09_probability_threshold.jpg "Probability threshold"
+[image36]: ./output_images/10_lane_pixels.jpg "Lanepixels found by sliding window search"
+[image37]: ./output_images/11_annotated_lane.jpg "Annotated lane"
+[image38]: ./output_images/12_warped_visualization.jpg "Warped visualization of lane lines and search windows"
+[image39]: ./output_images/13_final_result.jpg "Final result"
+
 
 [//]: # (Article References)
 [1]: http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#drawchessboardcorners
@@ -268,7 +284,9 @@ Propability threshold produces following kind of binary image.
 
 ## Color Threshold and Gradients Threshold
 
-NOTE! Color threshold and gradient threshold is for earlier version of this project, but it is good to keep here for informative purpose.
+> NOTE! Color threshold and gradient threshold are for earlier version of this 
+project. In this version we i'm not basically thresholding colors or gradients 
+alone but it is good to keep here for informative purpose.
 
 Threshold code is located in `LaneFinder/threshold.py` File. It is the used in 
 pipeline code which is located in `apply()` method in `LaneFinder/pipeline.py`
@@ -383,7 +401,7 @@ and right lane curvature in meters.
 
 I'm using following code to calculate curve radius.
 ```python
-a = fit[0]
+    a = fit[0]
     b = fit[1]
 
     # normal polynomial: x=                  a * (y**2) +           b *y+c,
@@ -394,10 +412,6 @@ a = fit[0]
     # Calculate curve radius with scaled coefficients
     radius = ((1 + (2 * a1 * a * y_eval * + (b1 * b)) ** 2) ** 1.5) / np.absolute(2 * a1 * a)
 ```
-But it seems that in my code this is not producing correct estimate. 
-Calculated is perhaps 3 times smaller than estimated 1km radius of curve in video.
-This mismatch is compensated in `finder.py` on line 268 where radius is multiplied by three.
- 
  
 In order to calculate car center location i'm first calculating center of lane 
 in pixels space by using `measure_lane_center()` function in `finder.py`. After that 
@@ -405,30 +419,65 @@ we need subtract it from image center and multiply by scaling factor.
 That is done in `finder.py` on lines 257-262.
 
 
-## Pipeline (single images)
+# Pipeline (single images)
 
-Above I described single elements in my pipeline and here is short summary.
-Main portion of pipeline is located in `PipeLine_LanePixels.apply()`
+Above I described single elements in my pipeline and here is summary the pipeline with relevant pictures.
 
-1. Undistort
-1.1 Crop
-2. Warp
-3. Convert uint8 to float32 image
-4. Convert BGR to cpaces (RGB, HLS, LAB and LUV colorspaces)
-5. Probabilities
-5.1 Calculate white and yellow probabilities
-5.2 Threshold to get most probable lane pixels
-6. Find lane pixels by using sliding window search
-7. Visualize lanes on warped empty image
-8. Measure curvature and offset 
-9. Unwarp visualized lane and combine with original image 
-10. Add measurements to image 
+### Image acquisition
+#### Original
+![alt text][image26]
 
-After applying pipeline to image we got following result.
-![alt text][image22]
+#### Undistort
+![alt text][image27]
+
+#### Cropped
+![alt text][image28]
+
+#### Warp
+![alt text][image29]
+
+### Image Conversion
+#### Blur
+![alt text][image30]
+
+#### Convert uint8 to float32 image
+
+#### Convert BGR to cpaces (RGB, HLS, LAB and LUV colorspaces)
+![alt text][image31]
+
+### Propability Calculations and Threshold
+
+### Filter with laneline propability filter
+![alt text][image32]
+
+#### Calculate white and yellow probabilities
+![alt text][image33]
+![alt text][image34]
+
+#### Threshold to get most probable lane pixels
+![alt text][image35]
+
+### Sliding window search
+
+#### Find lane pixels by using sliding window search
+![alt text][image36]
+
+### Curvature and Offset calculations
+
+### Visualizations for Video
+
+#### Visualize lane
+ ![alt text][image37] 
+
+####. Add measurements to image
+ ![alt text][image38]
+
+#### Finale Result
+ ![alt text][image39]
 
 
-### Pipeline (video)
+
+# Pipeline (video)
 
 Here's a [link to my video result](./augmented_project_video.mp4)
 
@@ -438,7 +487,7 @@ I would like to make few improvements such as.
 - Curve radius calculation need to be improved to produce correct results out of the box
 - Lane pixel detection needs also improvements to make it work on different roads.
 
-### Discussion
+# Discussion
 
 This project was interesting and i learned a lot about camera calibration and 
 perspective transformations. And perhaps the biggest learning came from using 
